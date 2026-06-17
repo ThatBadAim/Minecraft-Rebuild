@@ -25,7 +25,10 @@ export const BLOCKS = {
   WOOL: 20,
   TORCH: 21,
   TNT: 22,
-  COAL: 23
+  COAL: 23,
+  ICE: 24,
+  SLIME: 25,
+  COBWEB: 26
 };
 
 // Metadata for blocks
@@ -53,7 +56,10 @@ export const BLOCK_INFO = {
   [BLOCKS.WOOL]: { name: 'Wool', solid: false, transparent: true, uvs: { top: [0, 3], side: [0, 3], bottom: [0, 3] } },
   [BLOCKS.TORCH]: { name: 'Torch', solid: false, transparent: true, uvs: { top: [1, 3], side: [1, 3], bottom: [1, 3] } },
   [BLOCKS.TNT]: { name: 'TNT', solid: true, transparent: false, uvs: { top: [2, 3], side: [3, 3], bottom: [2, 3] } },
-  [BLOCKS.COAL]: { name: 'Coal Ore', solid: true, transparent: false, uvs: { top: [4, 3], side: [4, 3], bottom: [4, 3] } }
+  [BLOCKS.COAL]: { name: 'Coal Ore', solid: true, transparent: false, uvs: { top: [4, 3], side: [4, 3], bottom: [4, 3] } },
+  [BLOCKS.ICE]: { name: 'Ice', solid: true, transparent: true, uvs: { top: [5, 3], side: [5, 3], bottom: [5, 3] } },
+  [BLOCKS.SLIME]: { name: 'Slime Block', solid: true, transparent: true, uvs: { top: [6, 3], side: [6, 3], bottom: [6, 3] } },
+  [BLOCKS.COBWEB]: { name: 'Cobweb', solid: false, transparent: true, uvs: { top: [7, 3], side: [7, 3], bottom: [7, 3] } }
 };
 
 // Add type explicitly to BLOCK_INFO objects
@@ -580,6 +586,32 @@ function generateTextureAtlas(onCanvasCreated) {
           ctx.fillRect(tx + spot.x, ty + spot.y, spot.w, 1);
         }
       }
+
+      else if (id === 29) { // Ice
+        ctx.fillStyle = 'rgba(153, 204, 255, 0.7)';
+        ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(tx + 2, ty + 2, 4, 1);
+        ctx.fillRect(tx + 10, ty + 8, 3, 1);
+      }
+      else if (id === 30) { // Slime
+        ctx.fillStyle = 'rgba(110, 200, 100, 0.8)';
+        ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+        ctx.fillStyle = 'rgba(150, 230, 140, 0.9)';
+        ctx.fillRect(tx + 4, ty + 4, 8, 8);
+      }
+      else if (id === 31) { // Cobweb
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.0)';
+        ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(tx, ty); ctx.lineTo(tx + TEXTURE_SIZE, ty + TEXTURE_SIZE);
+        ctx.moveTo(tx + TEXTURE_SIZE, ty); ctx.lineTo(tx, ty + TEXTURE_SIZE);
+        ctx.moveTo(tx + 8, ty); ctx.lineTo(tx + 8, ty + TEXTURE_SIZE);
+        ctx.moveTo(tx, ty + 8); ctx.lineTo(tx + TEXTURE_SIZE, ty + 8);
+        ctx.stroke();
+      }
+
     }
   }
 

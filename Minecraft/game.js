@@ -536,13 +536,22 @@ class GameController {
     this.physics.position.x = 8;
     this.physics.position.z = 8;
     let spawnY = 30; // Default fallback
-    for (let y = this.world.chunkHeight - 1; y >= 0; y--) {
-      const block = this.world.getBlock(8, y, 8);
-      if (block && block.solid) {
-        spawnY = y + 1;
-        break;
+
+    // Make sure chunks exist
+    const block = this.world.getBlock(8, 0, 8);
+    if (!block || block.type === BLOCKS.AIR && this.world.chunks['0,0'] && this.world.chunks['0,0'].placeholder) {
+      // Chunk not loaded yet
+      spawnY = 60;
+    } else {
+      for (let y = this.world.chunkHeight - 1; y >= 0; y--) {
+        const check = this.world.getBlock(8, y, 8);
+        if (check && check.solid) {
+          spawnY = y + 1;
+          break;
+        }
       }
     }
+
     this.physics.position.y = spawnY;
     this.physics.onGround = true;
   }
@@ -898,21 +907,6 @@ class GameController {
         this.teleportToGround();
       }
 
-      // Eat Meat when pressing F
-      if (e.code === 'KeyF') {
-        const meatCount = this.getInventoryCount(BLOCKS.MEAT);
-        if (this.playerHunger < 20 && meatCount > 0) {
-          this.consumeFromInventory(BLOCKS.MEAT, 1);
-          this.playerHunger = Math.min(20, this.playerHunger + 4);
-          this.updateStatsHUD();
-          this.buildHotbarUI();
-          this.buildInventoryGridUI();
-          if (gameAudio && gameAudio.playPlaceSound) {
-            gameAudio.playPlaceSound();
-          }
-        }
-      }
-
       // Hotbar selection keys
       if (e.key >= '1' && e.key <= '9') {
         this.activeSlotIndex = parseInt(e.key) - 1;
@@ -1045,6 +1039,7 @@ class GameController {
     });
 
     window.addEventListener('mouseup', (e) => {
+      this.handleMouseUp(e);
       if (e.button === 0) {
         this.isMouseDown = false;
         this.isBreaking = false;
@@ -1605,7 +1600,7 @@ class GameController {
         if (!slotStack) {
           this.setSlotStack(type, index, { type: this.cursorStack.type, count: 1 });
           this.cursorStack.count--;
-          this.draggedSlots.set(key, 0); // using map to store original count
+          this.draggedSlots.set(key, 0);
         } else if (slotStack.count < max) {
           slotStack.count++;
           this.cursorStack.count--;
@@ -1620,8 +1615,22 @@ class GameController {
       }
 
       const numSlots = this.draggedSlots.size;
-      const perSlot = Math.floor(this.dragStartStackCount / numSlots);
       let remaining = this.dragStartStackCount;
+
+      // Calculate capacity across all dragged slots
+      let totalCapacity = 0;
+      this.draggedSlots.forEach((originalCount) => {
+          totalCapacity += (max - originalCount);
+      });
+
+      const totalToDistribute = Math.min(this.dragStartStackCount, totalCapacity);
+      const perSlot = Math.floor(totalToDistribute / numSlots);
+      remaining -= totalToDistribute; // whatever we distribute is removed from remaining
+
+      // Remainder distribution logic (e.g. 5 items across 3 slots = 1,1,1 and 2 remainder stays in cursor)
+      // Actually MC keeps the remainder in the cursor.
+
+      let itemsLeftToGive = totalToDistribute;
 
       this.draggedSlots.forEach((originalCount, slotKey) => {
         const [t, i] = slotKey.split('-');
@@ -1632,11 +1641,15 @@ class GameController {
           sStack = { type: this.cursorStack.type, count: 0 };
         }
 
+        // Ensure we don't overflow the max stack per slot
         const space = max - originalCount;
-        const add = Math.min(perSlot, space);
+        let add = Math.min(perSlot, space);
+
+        // If there's extra capacity because a slot filled up, in standard drag it just caps.
+        // For simplicity, we just add 'add'.
 
         sStack.count = originalCount + add;
-        remaining -= add;
+        itemsLeftToGive -= add;
 
         if (sStack.count > 0) {
           this.setSlotStack(t, idx, sStack);
@@ -1645,7 +1658,9 @@ class GameController {
         }
       });
 
-      this.cursorStack.count = remaining;
+      // Any items left to give due to full slots go back to the cursor
+      this.cursorStack.count = remaining + itemsLeftToGive;
+      if (this.cursorStack.count <= 0) this.cursorStack = null;
     }
 
     this.updateCursorStackUI();
@@ -2494,8 +2509,13 @@ class GameController {
       this.camera.getWorldDirection(this.camDirCache);
 
       if (this.playerHealth > 0) {
-        // 1. Run physics update
-        this.physics.update(dt, this.keys, this.camDirCache, this.world);
+        // Fixed 20 TPS physics tick accumulator
+        if (this.physicsAccumulator === undefined) this.physicsAccumulator = 0;
+        this.physicsAccumulator += dt;
+        while (this.physicsAccumulator >= 0.05) {
+          this.physics.update(0.05, this.keys, this.camDirCache, this.world);
+          this.physicsAccumulator -= 0.05;
+        }
 
         // Handle Fall Damage
         if (this.physics.lastFallDamage > 0) {
@@ -2630,389 +2650,6 @@ class GameController {
     this.renderer.render(this.scene, this.camera);
   }
 
-  setupEvents() {
-    const playBtn = document.getElementById('btn-play');
-    const menuScreen = document.getElementById('screen-menu');
-    const inventoryScreen = document.getElementById('inventory-screen');
-    const craftingScreen = document.getElementById('crafting-screen');
-
-    // Load settings from localStorage
-    const savedVol = localStorage.getItem('minecraft_clone_volume');
-    const savedFov = localStorage.getItem('minecraft_clone_fov');
-    const savedDist = localStorage.getItem('minecraft_clone_render_dist');
-    const savedSens = localStorage.getItem('minecraft_clone_sensitivity');
-
-    const volVal = savedVol !== null ? parseFloat(savedVol) : 0.7;
-    const fovVal = savedFov !== null ? parseInt(savedFov, 10) : 75;
-    const distVal = savedDist !== null ? parseInt(savedDist, 10) : 6;
-    const sensVal = savedSens !== null ? parseFloat(savedSens) : 1.0;
-
-    // Apply values to UI elements
-    const sliderVol = document.getElementById('slider-volume');
-    const sliderFov = document.getElementById('slider-fov');
-    const sliderDist = document.getElementById('slider-render-dist');
-    const sliderSens = document.getElementById('slider-sensitivity');
-
-    const labelVol = document.getElementById('val-volume');
-    const labelFov = document.getElementById('val-fov');
-    const labelDist = document.getElementById('val-render-dist');
-    const labelSens = document.getElementById('val-sensitivity');
-
-    if (sliderVol) {
-      sliderVol.value = volVal;
-      labelVol.innerText = Math.round(volVal * 100) + '%';
-      gameAudio.setVolume(volVal);
-      sliderVol.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        labelVol.innerText = Math.round(val * 100) + '%';
-        gameAudio.setVolume(val);
-        localStorage.setItem('minecraft_clone_volume', val);
-      });
-    }
-
-    if (sliderFov) {
-      sliderFov.value = fovVal;
-      labelFov.innerText = fovVal + '°';
-      this.camera.fov = fovVal;
-      this.camera.updateProjectionMatrix();
-      sliderFov.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        labelFov.innerText = val + '°';
-        this.camera.fov = val;
-        this.camera.updateProjectionMatrix();
-        localStorage.setItem('minecraft_clone_fov', val);
-      });
-    }
-
-    if (sliderDist) {
-      sliderDist.value = distVal;
-      labelDist.innerText = distVal + ' Chunks';
-      this.world.renderRadius = distVal;
-      sliderDist.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        labelDist.innerText = val + ' Chunks';
-        this.world.renderRadius = val;
-        localStorage.setItem('minecraft_clone_render_dist', val);
-      });
-    }
-
-    if (sliderSens) {
-      sliderSens.value = sensVal;
-      labelSens.innerText = sensVal.toFixed(1) + 'x';
-      this.controls.pointerSpeed = sensVal;
-      sliderSens.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        labelSens.innerText = val.toFixed(1) + 'x';
-        this.controls.pointerSpeed = val;
-        localStorage.setItem('minecraft_clone_sensitivity', val);
-      });
-    }
-
-    // Controls locking
-    playBtn.addEventListener('click', () => {
-      if (this.playerHealth <= 0) return;
-      this.controls.lock();
-      gameAudio.resume();
-    });
-
-    this.controls.addEventListener('lock', () => {
-      if (this.playerHealth <= 0) return;
-      menuScreen.classList.add('hidden');
-      inventoryScreen.classList.add('hidden');
-      craftingScreen.classList.add('hidden');
-      this.isInventoryOpen = false;
-      this.isCraftingOpen = false;
-    });
-
-    this.controls.addEventListener('unlock', () => {
-      this.isMouseDown = false;
-      this.isBreaking = false;
-      this.breakProgress = 0;
-      this.breakTarget = null;
-      if (this.breakingOverlay) {
-        this.breakingOverlay.visible = false;
-      }
-      if (this.playerHealth <= 0) {
-        document.getElementById('screen-gameover').classList.remove('hidden');
-      } else {
-        if (!this.isInventoryOpen && !this.isCraftingOpen) {
-          menuScreen.classList.remove('hidden');
-        }
-      }
-    });
-
-    const respawnBtn = document.getElementById('btn-respawn');
-    if (respawnBtn) {
-      respawnBtn.addEventListener('click', () => {
-        this.respawn();
-      });
-    }
-
-    // Close overlays when clicking outside
-    inventoryScreen.addEventListener('click', (e) => {
-      if (e.target === inventoryScreen) {
-        this.controls.lock();
-      }
-    });
-
-    // 2x2 Crafting Grid click bindings
-    for (let i = 0; i < 4; i++) {
-      const inputEl = document.getElementById(`craft-in-${i}`);
-      if (inputEl && !inputEl.dataset.initialized) {
-        inputEl.dataset.initialized = 'true';
-        inputEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = i; this.hoveredSlotType = 'craft-in'; this.handleDragUpdate('craft-in', i); });
-        inputEl.addEventListener('mouseleave', () => { if (this.hoveredSlotIndex === i && this.hoveredSlotType === 'craft-in') { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
-        inputEl.addEventListener('mousedown', (e) => this.handleSlotMousedown(e));
-      }
-    }
-    const craftOutputEl = document.getElementById('craft-out');
-    if (craftOutputEl && !craftOutputEl.dataset.initialized) {
-      craftOutputEl.dataset.initialized = 'true';
-      craftOutputEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = 0; this.hoveredSlotType = 'craft-out'; });
-      craftOutputEl.addEventListener('mouseleave', () => { if (this.hoveredSlotType === 'craft-out') { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
-      craftOutputEl.addEventListener('mousedown', (e) => this.handleSlotMousedown(e));
-    }
-    craftingScreen.addEventListener('click', (e) => {
-      if (e.target === craftingScreen) {
-        this.controls.lock();
-      }
-    });
-
-    // Keys
-    window.addEventListener('keydown', (e) => {
-      if (this.playerHealth <= 0) return;
-      this.keys[e.code] = true;
-
-      // Inventory UI Shortcuts
-      if (this.isInventoryOpen || this.isCraftingOpen) {
-        if (this.hoveredSlotType !== null && this.hoveredSlotIndex !== null) {
-          const type = this.hoveredSlotType;
-          const index = this.hoveredSlotIndex;
-
-          if (e.key >= '1' && e.key <= '9') {
-            const hbIndex = 27 + parseInt(e.key) - 1;
-            if (type !== 'hotbar' || index !== hbIndex) {
-              const hbStack = this.inventorySlots[hbIndex];
-              const hoveredStack = this.getSlotStack(type, index);
-
-              if (type !== 'craft-out') {
-                this.inventorySlots[hbIndex] = hoveredStack;
-                this.setSlotStack(type, index, hbStack);
-                this.buildInventoryGridUI();
-                this.buildHotbarUI();
-              }
-            }
-          }
-
-          if (e.code === 'KeyF') {
-            if (type !== 'offhand' && type !== 'craft-out') {
-              const offStack = this.offhandSlot;
-              const hoveredStack = this.getSlotStack(type, index);
-              this.offhandSlot = hoveredStack;
-              this.setSlotStack(type, index, offStack);
-              this.buildInventoryGridUI();
-              this.buildHotbarUI();
-            }
-          }
-
-          if (e.code === 'KeyQ') {
-            const dropAll = e.ctrlKey;
-            let targetStack = this.getSlotStack(type, index);
-            if (targetStack) {
-              if (dropAll) {
-                // Drop entire stack (spawn item in world)
-                this.spawnDroppedItem(targetStack.type, targetStack.count);
-                if (type === 'craft-out') this.collectCraftingOutput();
-                else this.setSlotStack(type, index, null);
-              } else {
-                // Drop 1
-                this.spawnDroppedItem(targetStack.type, 1);
-                if (type === 'craft-out') {
-                  // Cannot drop 1 from craft output usually, but if we do, it consumes the craft
-                  this.collectCraftingOutput();
-                  // Put remaining back on cursor for simplicity
-                  this.cursorStack = { type: targetStack.type, count: targetStack.count - 1 };
-                } else {
-                  targetStack.count--;
-                  if (targetStack.count <= 0) this.setSlotStack(type, index, null);
-                  else this.setSlotStack(type, index, targetStack);
-                }
-              }
-              this.buildInventoryGridUI();
-              this.buildHotbarUI();
-              this.updateCursorStackUI();
-            }
-          }
-        }
-      }
-
-      // Cursor Drop outside UI
-      if (e.code === 'KeyQ' && this.cursorStack && (this.hoveredSlotIndex === null || (!this.isInventoryOpen && !this.isCraftingOpen))) {
-        const dropAll = e.ctrlKey;
-        if (dropAll) {
-          this.spawnDroppedItem(this.cursorStack.type, this.cursorStack.count);
-          this.cursorStack = null;
-        } else {
-          this.spawnDroppedItem(this.cursorStack.type, 1);
-          this.cursorStack.count--;
-          if (this.cursorStack.count <= 0) this.cursorStack = null;
-        }
-        this.updateCursorStackUI();
-      }
-
-
-      // Reset coordinates if stuck
-      if (e.code === 'KeyR') {
-        this.teleportToGround();
-      }
-
-      // Eat Meat when pressing F
-      if (e.code === 'KeyF') {
-        const meatCount = this.getInventoryCount(BLOCKS.MEAT);
-        if (this.playerHunger < 20 && meatCount > 0) {
-          this.consumeFromInventory(BLOCKS.MEAT, 1);
-          this.playerHunger = Math.min(20, this.playerHunger + 4);
-          this.updateStatsHUD();
-          this.buildHotbarUI();
-          this.buildInventoryGridUI();
-          if (gameAudio && gameAudio.playPlaceSound) {
-            gameAudio.playPlaceSound();
-          }
-        }
-      }
-
-      // Hotbar selection keys
-      if (e.key >= '1' && e.key <= '9') {
-        this.activeSlotIndex = parseInt(e.key) - 1;
-        this.updateActiveHotbarSlot();
-      }
-
-      // Toggle inventory
-      if (e.code === 'KeyE') {
-        if (this.isInventoryOpen) {
-          this.controls.lock();
-        } else {
-          this.isInventoryOpen = true;
-          this.isCraftingOpen = false;
-          this.controls.unlock();
-          inventoryScreen.classList.remove('hidden');
-          craftingScreen.classList.add('hidden');
-          menuScreen.classList.add('hidden');
-          this.buildInventoryGridUI(); // Draw grids dynamically!
-        }
-      }
-
-      // Toggle crafting menu
-      if (e.code === 'KeyC') {
-        if (this.isCraftingOpen) {
-          this.controls.lock();
-        } else {
-          this.isCraftingOpen = true;
-          this.isInventoryOpen = false;
-          this.controls.unlock();
-          craftingScreen.classList.remove('hidden');
-          inventoryScreen.classList.add('hidden');
-          menuScreen.classList.add('hidden');
-          this.buildCraftingUI();
-        }
-      }
-
-      // Toggle minimap
-      if (e.code === 'KeyM') {
-        this.minimapVisible = !this.minimapVisible;
-        const minimapEl = document.getElementById('minimap-container');
-        if (minimapEl) {
-          minimapEl.style.display = this.minimapVisible ? 'flex' : 'none';
-        }
-      }
-    });
-
-    window.addEventListener('keyup', (e) => {
-      this.keys[e.code] = false;
-    });
-
-    // Mouse wheel for hotbar selection
-    window.addEventListener('wheel', (e) => {
-      if (!this.controls.isLocked || this.playerHealth <= 0) return;
-      if (this.isInventoryOpen || this.isCraftingOpen) return;
-
-      if (e.deltaY > 0) {
-        this.activeSlotIndex = (this.activeSlotIndex + 1) % 9;
-      } else {
-        this.activeSlotIndex = (this.activeSlotIndex - 1 + 9) % 9;
-      }
-      this.updateActiveHotbarSlot();
-    });
-
-    // Clear stuck keys on window blur
-    window.addEventListener('blur', () => {
-      this.keys = {};
-      this.isMouseDown = false;
-      this.isBreaking = false;
-      this.breakProgress = 0;
-      this.breakTarget = null;
-      if (this.breakingOverlay) {
-        this.breakingOverlay.visible = false;
-      }
-    });
-
-    window.addEventListener('mouseup', (e) => this.handleMouseUp(e));
-
-    // Window Resize
-    window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    // Mouse Clicks for Blocks
-    window.addEventListener('mousedown', (e) => {
-      if (!this.controls.isLocked || this.playerHealth <= 0) return;
-
-      if (e.button === 0) {
-        this.isMouseDown = true;
-        // Attack Animal first
-        if (this.entityManager && this.entityManager.checkHit(this.camera, this.raycaster)) {
-          return;
-        }
-        // Start breaking
-        this.isBreaking = true;
-        this.breakProgress = 0;
-        if (this.targetBlock) {
-          this.breakTarget = { x: this.targetBlock.x, y: this.targetBlock.y, z: this.targetBlock.z };
-        }
-      } else if (e.button === 2) {
-        // Check if targeted block is a Crafting Table block
-        if (this.targetBlock) {
-          const block = this.world.getBlock(this.targetBlock.x, this.targetBlock.y, this.targetBlock.z);
-          if (block && block.type === BLOCKS.CRAFTING_TABLE) {
-            this.isCraftingOpen = true;
-            this.isInventoryOpen = false;
-            this.controls.unlock();
-            craftingScreen.classList.remove('hidden');
-            inventoryScreen.classList.add('hidden');
-            menuScreen.classList.add('hidden');
-            this.buildCraftingUI();
-            return;
-          }
-        }
-        // Place Block
-        this.placeTargetBlock();
-      }
-    });
-
-    window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) {
-        this.isMouseDown = false;
-        this.isBreaking = false;
-        this.breakProgress = 0;
-        this.breakTarget = null;
-        if (this.breakingOverlay) {
-          this.breakingOverlay.visible = false;
-        }
-      }
-    });
-  }
 }
 
 // Instantiate game instance on script start

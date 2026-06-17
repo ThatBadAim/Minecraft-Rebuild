@@ -44,7 +44,6 @@ export class PhysicsEngine {
   // Check if a point is colliding with a solid block in the world helper
   // We check bounds of the block
   getBlocksIntersecting(world, pos, width, height) {
-    // Expand the search bounding box by 0.5 blocks to ensure adjacent blocks are checked for collisions
     const minX = Math.floor(pos.x - width / 2 - 0.5);
     const maxX = Math.floor(pos.x + width / 2 + 0.5);
     const minY = Math.floor(pos.y - 0.5);
@@ -59,7 +58,7 @@ export class PhysicsEngine {
         for (let z = minZ; z <= maxZ; z++) {
           const block = world.getBlock(x, y, z);
           if (block === null) {
-            // Treat unloaded/out-of-bounds chunks as solid barriers to prevent falling into the void
+            // Unloaded chunk - act as solid wall/floor
             collidingBlocks.push({
               x: x, y: y, z: z,
               minX: x, maxX: x + 1,
@@ -81,12 +80,11 @@ export class PhysicsEngine {
   }
 
   update(deltaTime, keys, cameraDirection, world) {
-    if (deltaTime > 0.1) deltaTime = 0.1; // Cap delta to prevent huge jumps/falls
+    const tickRate = 0.05;
 
     const height = this.getCurrentHeight();
     const radius = this.playerWidth / 2;
 
-    // Check if player is currently in water
     const px = Math.floor(this.position.x);
     const pz = Math.floor(this.position.z);
     const feetY = Math.floor(this.position.y);
@@ -95,11 +93,25 @@ export class PhysicsEngine {
     const feetBlock = world.getBlock(px, feetY, pz);
     const bodyBlock = world.getBlock(px, bodyY, pz);
 
-    const isFeetWater = feetBlock && feetBlock.type === BLOCKS.WATER;
-    const isBodyWater = bodyBlock && bodyBlock.type === BLOCKS.WATER;
-    this.inWater = isFeetWater || isBodyWater;
+    this.inWater = (feetBlock && feetBlock.type === BLOCKS.WATER) || (bodyBlock && bodyBlock.type === BLOCKS.WATER);
 
-    // 1. Calculate target horizontal movement based on inputs
+    const blockBelow = world.getBlock(px, feetY - 1, pz);
+    const isOnIce = blockBelow && blockBelow.type === BLOCKS.ICE;
+    const isOnSlime = blockBelow && blockBelow.type === BLOCKS.SLIME;
+    const inCobweb = (feetBlock && feetBlock.type === BLOCKS.COBWEB) || (bodyBlock && bodyBlock.type === BLOCKS.COBWEB);
+
+    if (inCobweb) {
+      this.velocity.x *= 0.25;
+      this.velocity.z *= 0.25;
+    } else if (this.onGround) {
+      const friction = isOnIce ? 0.98 : 0.546;
+      this.velocity.x *= friction;
+      this.velocity.z *= friction;
+    } else {
+      this.velocity.x *= 0.91;
+      this.velocity.z *= 0.91;
+    }
+
     this.forwardCache.set(cameraDirection.x, 0, cameraDirection.z).normalize();
     this.rightCache.crossVectors(this.forwardCache, this.upCache).normalize();
 
@@ -111,104 +123,111 @@ export class PhysicsEngine {
     if (keys['KeyD'] || keys['ArrowRight']) sideInput += 1;
     if (keys['KeyA'] || keys['ArrowLeft']) sideInput -= 1;
 
-    // Normalize inputs diagonally to prevent speed boosts
     const inputLength = Math.sqrt(forwardInput * forwardInput + sideInput * sideInput);
-    this.targetHorizVelocityCache.set(0, 0, 0);
 
-    // Crouching logic (Control key)
     const wasCrouching = this.isCrouching;
-    this.isCrouching = keys['ControlLeft'] || keys['ControlRight'];
+    this.isCrouching = keys['ControlLeft'] || keys['ControlRight'] || keys['KeyC'];
 
-    // Sprinting logic (Shift key)
-    const isMovingForward = keys['KeyW'] || keys['ArrowUp'];
-    this.isSprinting = (keys['ShiftLeft'] || keys['ShiftRight']) && isMovingForward && !this.isCrouching;
+    let hitWallAhead = false;
+    if (this.isSprinting) {
+        const testPos = this.position.clone().addScaledVector(this.forwardCache, 0.2);
+        const aheadCols = this.getBlocksIntersecting(world, testPos, this.playerWidth, height);
+        if (aheadCols.length > 0) hitWallAhead = true;
+    }
 
-    // Prevent standing up if blocked above
+    const isMovingForward = forwardInput > 0;
+    this.isSprinting = (keys['ShiftLeft'] || keys['ShiftRight']) && isMovingForward && !this.isCrouching && !hitWallAhead;
+    if (forwardInput < 0) this.isSprinting = false;
+
     if (wasCrouching && !this.isCrouching) {
       const topBlocks = this.getBlocksIntersecting(world, this.position, this.playerWidth, this.playerHeight);
       if (topBlocks.length > 0) {
-        this.isCrouching = true; // Keep crouching
+        this.isCrouching = true;
       }
     }
 
-    let currentSpeed = this.walkSpeed;
+    // Walking: 4.317 m/s, Sprinting: 5.612 m/s, Sneaking: 1.31 m/s. Converted to m/tick by multiplying by 0.05
+    let targetSpeed = 4.317 * tickRate;
+    this.playerCrouchHeight = 1.5; // Update sneak height constraint
+
     if (this.isCrouching) {
-      currentSpeed = this.crouchSpeed;
+      targetSpeed = 1.31 * tickRate;
     } else if (this.isSprinting) {
-      currentSpeed = this.sprintSpeed;
+      targetSpeed = 5.612 * tickRate;
     }
 
-    // Massively slow down horizontal movement in water
     if (this.inWater) {
-      currentSpeed *= 0.35;
+      targetSpeed *= 0.35;
     }
 
-    if (inputLength > 0) {
+    if (inputLength > 0 && !inCobweb) {
       const normForward = forwardInput / inputLength;
       const normSide = sideInput / inputLength;
-
-      this.targetHorizVelocityCache.copy(this.forwardCache).multiplyScalar(normForward * currentSpeed);
-      // Side-to-side (strafing) is 1/2 of forward capability
-      this.targetHorizVelocityCache.addScaledVector(this.rightCache, normSide * currentSpeed * 0.5);
+      this.velocity.addScaledVector(this.forwardCache, normForward * targetSpeed);
+      this.velocity.addScaledVector(this.rightCache, normSide * targetSpeed * 0.5);
     }
 
-    // Apply linear interpolation for inertia/momentum
-    // When jumping, direction change rate is 1/3 of the ground control (6.0 vs 18.0)
-    const lerpFactor = this.onGround ? 18.0 : 6.0;
-    this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, this.targetHorizVelocityCache.x, lerpFactor * deltaTime);
-    this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, this.targetHorizVelocityCache.z, lerpFactor * deltaTime);
+    // Sneaking Edge Guardrail
+    if (this.isCrouching && this.onGround) {
+        const testX = new THREE.Vector3(this.position.x + this.velocity.x, this.position.y - 0.1, this.position.z);
+        const colX = this.getBlocksIntersecting(world, testX, this.playerWidth, height);
+        if (colX.length === 0) this.velocity.x = 0;
 
-    // 2. Apply gravity / water buoyancy
-    if (!this.onGround) {
-      let currentGravity = this.gravity;
-      let currentTerminalVelocity = this.terminalVelocity;
+        const testZ = new THREE.Vector3(this.position.x, this.position.y - 0.1, this.position.z + this.velocity.z);
+        const colZ = this.getBlocksIntersecting(world, testZ, this.playerWidth, height);
+        if (colZ.length === 0) this.velocity.z = 0;
+    }
 
-      if (this.inWater) {
-        currentGravity = -8.0; // Reduced gravity in water
-        currentTerminalVelocity = -5.0; // Slower sinking terminal velocity
-      }
+    let currentGravity = -32.0;
+    let currentTerminalVelocity = -50.0;
 
-      this.velocity.y += currentGravity * deltaTime;
+    if (this.inWater) {
+      currentGravity = -8.0;
+      currentTerminalVelocity = -5.0;
+    }
+
+    if (inCobweb) {
+        this.velocity.y = -0.05;
+    } else if (!this.onGround) {
+      this.velocity.y += currentGravity * tickRate;
       if (this.velocity.y < currentTerminalVelocity) {
         this.velocity.y = currentTerminalVelocity;
       }
     }
 
-    // 3. Apply jumping / swimming
     if (this.inWater) {
       if (keys['Space']) {
-        this.velocity.y = 3.0; // Swim upward speed
+        this.velocity.y = 0.15;
         this.onGround = false;
       }
     } else if (this.onGround && keys['Space']) {
-      this.velocity.y = this.jumpForce;
+      this.velocity.y = 0.42;
       this.onGround = false;
+
+      if (this.isSprinting) {
+          this.velocity.addScaledVector(this.forwardCache, 0.2);
+      }
       gameAudio.playJumpSound();
     }
 
-    // 4. Update position & resolve collisions sequentially for precision (X, then Z, then Y)
-
-    // --- X Axis ---
-    this.position.x += this.velocity.x * deltaTime;
+    this.position.x += this.velocity.x;
     let collisions = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
     for (const block of collisions) {
       const overlapsX = (this.position.x + radius > block.minX) && (this.position.x - radius < block.maxX);
       const overlapsY = (this.position.y + height > block.minY) && (this.position.y < block.maxY);
       const overlapsZ = (this.position.z + radius > block.minZ) && (this.position.z - radius < block.maxZ);
       if (overlapsX && overlapsY && overlapsZ) {
-        // Resolve based on player center relative to block center
         const blockCenterX = block.minX + 0.5;
         if (this.position.x < blockCenterX) {
-          this.position.x = block.minX - radius; // Snap to left side
+          this.position.x = block.minX - radius;
         } else {
-          this.position.x = block.maxX + radius; // Snap to right side
+          this.position.x = block.maxX + radius;
         }
         this.velocity.x = 0;
       }
     }
 
-    // --- Z Axis ---
-    this.position.z += this.velocity.z * deltaTime;
+    this.position.z += this.velocity.z;
     collisions = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
     for (const block of collisions) {
       const overlapsX = (this.position.x + radius > block.minX) && (this.position.x - radius < block.maxX);
@@ -217,37 +236,48 @@ export class PhysicsEngine {
       if (overlapsX && overlapsY && overlapsZ) {
         const blockCenterZ = block.minZ + 0.5;
         if (this.position.z < blockCenterZ) {
-          this.position.z = block.minZ - radius; // Snap to back
+          this.position.z = block.minZ - radius;
         } else {
-          this.position.z = block.maxZ + radius; // Snap to front
+          this.position.z = block.maxZ + radius;
         }
         this.velocity.z = 0;
       }
     }
 
-    // --- Y Axis (Vertical) ---
+
     const oldOnGround = this.onGround;
     this.onGround = false;
+    let hitSlime = false;
 
-    this.position.y += this.velocity.y * deltaTime;
+    this.position.y += this.velocity.y;
     collisions = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
 
     for (const block of collisions) {
-      // Add safety margin epsilon to prevent wall contacts from incorrectly registering as vertical head/foot collisions due to float rounding
+      // If block.minY is undefined (it's an unloaded chunk boundary), treat it as solid floor at y=0 or just stop player
+      if (block.minY === undefined) {
+         // It's a void/unloaded chunk. Stop falling.
+         this.velocity.y = 0;
+         this.onGround = true;
+         continue;
+      }
+
       const overlapsX = (this.position.x + radius - 0.05 > block.minX) && (this.position.x - radius + 0.05 < block.maxX);
       const overlapsY = (this.position.y + height > block.minY) && (this.position.y < block.maxY);
       const overlapsZ = (this.position.z + radius - 0.05 > block.minZ) && (this.position.z - radius + 0.05 < block.maxZ);
       if (overlapsX && overlapsY && overlapsZ) {
         if (this.velocity.y < 0) {
-          // Collided with ground below
           const overlapY = block.maxY - this.position.y;
           if (overlapY > 0) {
             this.position.y += overlapY;
-            this.velocity.y = 0;
+            const b = world.getBlock(block.x, block.y, block.z);
+            if (b && b.type === BLOCKS.SLIME) {
+                hitSlime = true;
+            } else {
+                this.velocity.y = 0;
+            }
             this.onGround = true;
           }
         } else if (this.velocity.y > 0) {
-          // Head collision with ceiling block
           const overlapY = (this.position.y + height) - block.minY;
           if (overlapY > 0) {
             this.position.y -= overlapY;
@@ -257,44 +287,45 @@ export class PhysicsEngine {
       }
     }
 
-    // Snaps to bedrock level if player somehow falls below the map
+    if (hitSlime && this.velocity.y < -0.1) {
+       this.velocity.y = Math.abs(this.velocity.y) * 0.8;
+       this.onGround = false;
+       this.lastFallDamage = 0;
+       this.isFalling = false;
+    }
+
     if (this.position.y < 1.001) {
       this.position.y = 1.0;
       this.velocity.y = 0;
       this.onGround = true;
     }
 
-    // Fall damage calculation & landing sound
-    this.lastFallDamage = 0;
-    if (!this.onGround && !this.isFalling && this.velocity.y < -1.0) {
-      // Started falling — record starting height
-      this.isFalling = true;
-      this.fallStartY = this.position.y;
-    }
-    if (this.onGround && !oldOnGround) {
-      gameAudio.playLandSound();
-      if (this.isFalling) {
-        const fallDistance = this.fallStartY - this.position.y;
-        // Falls > 3 blocks deal damage (1 damage per block beyond 3)
-        // Water negates fall damage
-        if (fallDistance > 3.0 && !this.inWater) {
-          this.lastFallDamage = Math.floor(fallDistance - 3);
+    if (!hitSlime) {
+      this.lastFallDamage = 0;
+      if (!this.onGround && !this.isFalling && this.velocity.y < -0.1) {
+        this.isFalling = true;
+        this.fallStartY = this.position.y;
+      }
+      if (this.onGround && !oldOnGround) {
+        gameAudio.playLandSound();
+        if (this.isFalling) {
+          const fallDistance = this.fallStartY - this.position.y;
+          if (fallDistance > 3.0 && !this.inWater) {
+            this.lastFallDamage = Math.floor(fallDistance - 3);
+          }
+          this.isFalling = false;
         }
+      }
+      if (this.isFalling && this.position.y > this.fallStartY) {
+        this.fallStartY = this.position.y;
+      }
+      if (this.onGround) {
         this.isFalling = false;
       }
     }
-    // Track highest point during fall
-    if (this.isFalling && this.position.y > this.fallStartY) {
-      this.fallStartY = this.position.y;
-    }
-    // Reset fall tracking when on ground
-    if (this.onGround) {
-      this.isFalling = false;
-    }
 
-    // Footstep sounds
     if (this.onGround && (this.velocity.x !== 0 || this.velocity.z !== 0)) {
-      this.stepTimer += deltaTime;
+      this.stepTimer += tickRate;
       const threshold = this.isCrouching ? this.stepInterval * 1.5 : (this.isSprinting ? this.stepInterval * 0.6 : this.stepInterval);
       if (this.stepTimer >= threshold) {
         gameAudio.playFootstepSound();
