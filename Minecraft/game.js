@@ -612,40 +612,29 @@ class GameController {
     const hungerRow = document.getElementById('hunger-row');
     if (!heartsRow || !hungerRow) return;
 
-    // Render Hearts (10 hearts representing 20 HP)
     let heartsHtml = '';
     for (let i = 0; i < 10; i++) {
       const heartVal = (i + 1) * 2;
-      let styleFill = 'fill: #ff2222;'; // Full
-
       if (this.playerHealth >= heartVal) {
-        styleFill = 'fill: #ff2222;';
+        heartsHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M1 2h2v1h-2zM3 1h3v1h-3zM6 2h2v1h-2zM0 3h1v3h-1zM1 6h1v1h-1zM2 7h1v1h-1zM3 8h3v1h-3zM6 7h1v1h-1zM7 6h1v1h-1zM8 3h1v3h-1z"/><path fill="#f00" d="M1 3h7v1h-7zM1 4h7v1h-7zM1 5h7v1h-7zM2 6h5v1h-5zM3 7h3v1h-3z"/></svg>`;
       } else if (this.playerHealth === heartVal - 1) {
-        styleFill = 'fill: url(#heart-half-grad);'; // Half
+        heartsHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M1 2h2v1h-2zM3 1h3v1h-3zM6 2h2v1h-2zM0 3h1v3h-1zM1 6h1v1h-1zM2 7h1v1h-1zM3 8h3v1h-3zM6 7h1v1h-1zM7 6h1v1h-1zM8 3h1v3h-1z"/><path fill="#f00" d="M1 3h3v1h-3zM1 4h3v1h-3zM1 5h3v1h-3zM2 6h2v1h-2zM3 7h1v1h-1z"/></svg>`;
       } else {
-        styleFill = 'fill: rgba(255, 255, 255, 0.2);'; // Empty
+        heartsHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M1 2h2v1h-2zM3 1h3v1h-3zM6 2h2v1h-2zM0 3h1v3h-1zM1 6h1v1h-1zM2 7h1v1h-1zM3 8h3v1h-3zM6 7h1v1h-1zM7 6h1v1h-1zM8 3h1v3h-1z"/></svg>`;
       }
-
-      heartsHtml += `<svg class="hud-icon" style="${styleFill}" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
     }
     heartsRow.innerHTML = heartsHtml;
 
-    // Render Hunger (10 drumsticks representing 20 Hunger)
     let hungerHtml = '';
     for (let i = 0; i < 10; i++) {
       const hungerVal = (i + 1) * 2;
-      let styleFill = 'fill: #d97706;'; // Full
-
       if (this.playerHunger >= hungerVal) {
-        styleFill = 'fill: #d97706;';
+        hungerHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M5 0h2v1h-2zM7 1h2v2h-2zM5 1h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM0 5h2v2h-2zM2 7h2v2h-2z"/><path fill="#8b4513" d="M6 1h1v1h-1zM7 2h1v1h-1zM6 2h1v1h-1zM5 2h1v1h-1zM4 3h2v1h-2zM3 4h2v1h-2zM3 5h1v1h-1zM2 5h1v1h-1z"/></svg>`;
       } else if (this.playerHunger === hungerVal - 1) {
-        styleFill = 'fill: url(#hunger-half-grad);'; // Half
+        hungerHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M5 0h2v1h-2zM7 1h2v2h-2zM5 1h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM0 5h2v2h-2zM2 7h2v2h-2z"/><path fill="#8b4513" d="M6 1h1v1h-1zM7 2h1v1h-1zM6 2h1v1h-1zM5 2h1v1h-1z"/></svg>`;
       } else {
-        styleFill = 'fill: rgba(255, 255, 255, 0.2);'; // Empty
+        hungerHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M5 0h2v1h-2zM7 1h2v2h-2zM5 1h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM0 5h2v2h-2zM2 7h2v2h-2z"/></svg>`;
       }
-
-      // Drumstick bone/meat path shape
-      hungerHtml += `<svg class="hud-icon" style="${styleFill}" viewBox="0 0 24 24"><path d="M18.5 3c-1.5 0-3 1-3.5 2.5C14 7 13.5 9 12 10.5c-1.5 1.5-3.5 2-5 3C5.5 14 4.5 15.5 4.5 17c0 2.2 1.8 4 4 4s4-1.8 4-4c0-1.5-1-3-2.5-3.5 1.5-1.5 3.5-2 5-3.5 1.5-1.5 2-3.5 3-5 1.5-.5 2.5-2 2.5-3.5c0-1.7-1.3-3-3-3z"/></svg>`;
     }
     hungerRow.innerHTML = hungerHtml;
   }
@@ -2600,7 +2589,7 @@ class GameController {
           const px = this.physics.position.x.toFixed(1);
           const py = this.physics.position.y.toFixed(1);
           const pz = this.physics.position.z.toFixed(1);
-          document.getElementById('player-pos').innerText = `${px}, ${py}, ${pz}`;
+
 
           const oxBar = document.getElementById('oxygen-bar-container');
           if (oxBar) {
@@ -2621,7 +2610,7 @@ class GameController {
           this.minimapUpdateTimer += dt;
           if (this.minimapUpdateTimer >= 0.5) { // 2 FPS map updates
             this.minimapUpdateTimer = 0;
-            this.updateMinimap();
+            // this.updateMinimap();
           }
         }
 

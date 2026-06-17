@@ -108,15 +108,12 @@ body, html {
 
 #active-item-name {
   font-family: var(--font-retro);
-  font-size: 10px;
+  font-size: 12px;
   text-shadow: 2px 2px 0px #000;
-  letter-spacing: 1px;
   color: #fff;
   opacity: 0;
   transition: opacity var(--transition-speed);
-  background: rgba(0, 0, 0, 0.4);
-  padding: 6px 12px;
-  border-radius: 4px;
+  margin-bottom: 8px;
   pointer-events: none;
 }
 
@@ -127,52 +124,63 @@ body, html {
 /* Hotbar */
 #hotbar {
   display: flex;
-  background: var(--bg-dark);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-color);
-  padding: 6px;
-  border-radius: 12px;
-  gap: 6px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  background: rgba(139, 139, 139, 0.5); /* semi-transparent gray like bedrock or solid */
+  border: 2px solid #000;
+  border-top-color: #777;
+  border-left-color: #777;
+  border-bottom-color: #555;
+  border-right-color: #555;
+  padding: 2px;
+  gap: 0; /* contiguous */
   pointer-events: auto;
+  image-rendering: pixelated;
 }
 
 .hotbar-slot {
-  width: 52px;
-  height: 52px;
-  border-radius: 8px;
-  background: var(--bg-light);
-  border: 2px solid transparent;
+  width: 40px;
+  height: 40px;
+  background: #8b8b8b;
+  border-right: 2px solid #373737;
+  border-bottom: 2px solid #373737;
+  border-top: 2px solid #b8b8b8;
+  border-left: 2px solid #b8b8b8;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  image-rendering: pixelated;
 }
 
-.hotbar-slot:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.3);
-}
+
 
 .hotbar-slot.active {
-  background: rgba(79, 70, 229, 0.2);
-  border-color: var(--accent-color);
-  box-shadow: 0 0 12px var(--accent-glow);
+  border: 2px solid #fff;
+  outline: 2px solid #000;
+  outline-offset: -4px;
+  z-index: 2;
 }
 
 .slot-num {
   position: absolute;
-  top: 4px;
-  left: 6px;
-  font-size: 9px;
+  top: 2px;
+  left: 2px;
+  font-size: 10px;
   font-family: var(--font-retro);
-  color: var(--text-muted);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
 }
 
 .hotbar-slot.active .slot-num {
-  color: #a5b4fc;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 10px;
+  font-family: var(--font-retro);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
 }
 
 .slot-icon {
@@ -420,9 +428,9 @@ body, html {
 /* Slot Counts & Crafting Styles */
 .slot-count {
   position: absolute;
-  bottom: 4px;
-  right: 6px;
-  font-size: 9px;
+  bottom: 2px;
+  right: 2px;
+  font-size: 10px;
   font-family: var(--font-retro);
   color: #fff;
   text-shadow: 1px 1px 0px #000;
@@ -516,21 +524,17 @@ body, html {
 #stats-hud-container {
   display: flex;
   justify-content: space-between;
-  width: 480px;
-  margin-bottom: 6px;
+  width: 364px; /* match standard hotbar width approx */
+  margin-bottom: 2px;
   pointer-events: auto;
+  align-items: flex-end;
 }
 
 #hearts-row, #hunger-row {
   display: flex;
-  gap: 3px;
-  background: rgba(0, 0, 0, 0.45);
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  gap: 0px;
 }
+
 
 .hud-icon {
   width: 14px;
@@ -869,10 +873,11 @@ body, html {
 
 #cursor-stack .slot-count {
   position: absolute;
-  bottom: 0px;
-  right: 0px;
-  font-size: 11px;
+  bottom: 2px;
+  right: 2px;
+  font-size: 10px;
   font-family: var(--font-retro);
   color: #fff;
   text-shadow: 1px 1px 0px #000;
+  pointer-events: none;
 }
