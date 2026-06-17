@@ -211,16 +211,18 @@ export class PhysicsEngine {
     }
 
     this.position.x += this.velocity.x;
-    let collisions = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
-    for (const block of collisions) {
+    let collisionsX = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
+    if (this.velocity.x > 0) collisionsX.sort((a,b) => a.minX - b.minX);
+    else if (this.velocity.x < 0) collisionsX.sort((a,b) => b.maxX - a.maxX);
+
+    for (const block of collisionsX) {
       const overlapsX = (this.position.x + radius > block.minX) && (this.position.x - radius < block.maxX);
       const overlapsY = (this.position.y + height > block.minY) && (this.position.y < block.maxY);
       const overlapsZ = (this.position.z + radius > block.minZ) && (this.position.z - radius < block.maxZ);
       if (overlapsX && overlapsY && overlapsZ) {
-        const blockCenterX = block.minX + 0.5;
-        if (this.position.x < blockCenterX) {
+        if (this.velocity.x > 0) {
           this.position.x = block.minX - radius;
-        } else {
+        } else if (this.velocity.x < 0) {
           this.position.x = block.maxX + radius;
         }
         this.velocity.x = 0;
@@ -228,39 +230,39 @@ export class PhysicsEngine {
     }
 
     this.position.z += this.velocity.z;
-    collisions = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
-    for (const block of collisions) {
+    let collisionsZ = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
+    if (this.velocity.z > 0) collisionsZ.sort((a,b) => a.minZ - b.minZ);
+    else if (this.velocity.z < 0) collisionsZ.sort((a,b) => b.maxZ - a.maxZ);
+
+    for (const block of collisionsZ) {
       const overlapsX = (this.position.x + radius > block.minX) && (this.position.x - radius < block.maxX);
       const overlapsY = (this.position.y + height > block.minY) && (this.position.y < block.maxY);
       const overlapsZ = (this.position.z + radius > block.minZ) && (this.position.z - radius < block.maxZ);
       if (overlapsX && overlapsY && overlapsZ) {
-        const blockCenterZ = block.minZ + 0.5;
-        if (this.position.z < blockCenterZ) {
+        if (this.velocity.z > 0) {
           this.position.z = block.minZ - radius;
-        } else {
+        } else if (this.velocity.z < 0) {
           this.position.z = block.maxZ + radius;
         }
         this.velocity.z = 0;
       }
     }
 
-
     const oldOnGround = this.onGround;
     this.onGround = false;
     let hitSlime = false;
 
     this.position.y += this.velocity.y;
-    collisions = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
+    let collisionsY = this.getBlocksIntersecting(world, this.position, this.playerWidth, height);
+    if (this.velocity.y > 0) collisionsY.sort((a,b) => a.minY - b.minY);
+    else if (this.velocity.y < 0) collisionsY.sort((a,b) => b.maxY - a.maxY);
 
-    for (const block of collisions) {
-      // If block.minY is undefined (it's an unloaded chunk boundary), treat it as solid floor at y=0 or just stop player
+    for (const block of collisionsY) {
       if (block.minY === undefined) {
-         // It's a void/unloaded chunk. Stop falling.
          this.velocity.y = 0;
          this.onGround = true;
          continue;
       }
-
       const overlapsX = (this.position.x + radius - 0.05 > block.minX) && (this.position.x - radius + 0.05 < block.maxX);
       const overlapsY = (this.position.y + height > block.minY) && (this.position.y < block.maxY);
       const overlapsZ = (this.position.z + radius - 0.05 > block.minZ) && (this.position.z - radius + 0.05 < block.maxZ);
