@@ -43,13 +43,15 @@ export class PhysicsEngine {
 
   // Check if a point is colliding with a solid block in the world helper
   // We check bounds of the block
+  // Get blocks intersecting AABB
   getBlocksIntersecting(world, pos, width, height) {
-    const minX = Math.floor(pos.x - width / 2 - 0.5);
-    const maxX = Math.floor(pos.x + width / 2 + 0.5);
-    const minY = Math.floor(pos.y - 0.5);
-    const maxY = Math.floor(pos.y + height + 0.5);
-    const minZ = Math.floor(pos.z - width / 2 - 0.5);
-    const maxZ = Math.floor(pos.z + width / 2 + 0.5);
+    const radius = width / 2;
+    const minX = Math.floor(pos.x - radius);
+    const maxX = Math.floor(pos.x + radius);
+    const minY = Math.floor(pos.y);
+    const maxY = Math.floor(pos.y + height);
+    const minZ = Math.floor(pos.z - radius);
+    const maxZ = Math.floor(pos.z + radius);
 
     const collidingBlocks = [];
 
@@ -57,20 +59,14 @@ export class PhysicsEngine {
       for (let y = minY; y <= maxY; y++) {
         for (let z = minZ; z <= maxZ; z++) {
           const block = world.getBlock(x, y, z);
-          if (block === null) {
-            // Unloaded chunk - act as solid wall/floor
+          // If chunk not loaded or bedrock boundary, block might be null
+          if (!block || block.solid) {
             collidingBlocks.push({
               x: x, y: y, z: z,
               minX: x, maxX: x + 1,
               minY: y, maxY: y + 1,
-              minZ: z, maxZ: z + 1
-            });
-          } else if (block && block.solid) {
-            collidingBlocks.push({
-              x: x, y: y, z: z,
-              minX: x, maxX: x + 1,
-              minY: y, maxY: y + 1,
-              minZ: z, maxZ: z + 1
+              minZ: z, maxZ: z + 1,
+              isLoaded: block !== null
             });
           }
         }
@@ -258,15 +254,18 @@ export class PhysicsEngine {
     else if (this.velocity.y < 0) collisionsY.sort((a,b) => b.maxY - a.maxY);
 
     for (const block of collisionsY) {
-      if (block.minY === undefined) {
-         this.velocity.y = 0;
-         this.onGround = true;
-         continue;
-      }
-      const overlapsX = (this.position.x + radius - 0.05 > block.minX) && (this.position.x - radius + 0.05 < block.maxX);
+      const overlapsX = (this.position.x + radius > block.minX) && (this.position.x - radius < block.maxX);
       const overlapsY = (this.position.y + height > block.minY) && (this.position.y < block.maxY);
-      const overlapsZ = (this.position.z + radius - 0.05 > block.minZ) && (this.position.z - radius + 0.05 < block.maxZ);
+      const overlapsZ = (this.position.z + radius > block.minZ) && (this.position.z - radius < block.maxZ);
       if (overlapsX && overlapsY && overlapsZ) {
+        if (!block.isLoaded && this.velocity.y < 0) {
+           // We are falling into an unloaded chunk. Freeze vertical movement to prevent falling through world
+           this.position.y = block.maxY;
+           this.velocity.y = 0;
+           this.onGround = true;
+           continue;
+        }
+
         if (this.velocity.y < 0) {
           const overlapY = block.maxY - this.position.y;
           if (overlapY > 0) {
