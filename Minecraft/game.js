@@ -22,6 +22,9 @@ class GameController {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
+    // Order-Independent Transparency (OIT) Framebuffers setup
+    this.setupOITRenderTargets();
+
     // 2. Physics & World
     this.physics = new PhysicsEngine();
     this.playerHealth = 20;
@@ -252,6 +255,130 @@ class GameController {
     this.animate();
   }
 
+  setupOITRenderTargets() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    // Create a base depth texture to be shared or copied across passes
+    const depthTexture = new THREE.DepthTexture(w, h);
+    depthTexture.type = THREE.UnsignedIntType;
+
+    // 1. Opaque FBO (Solid blocks, entities)
+    this.rtOpaque = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      depthTexture: depthTexture
+    });
+
+    // For true Order-Independent Transparency sorting in the compositing shader, each
+    // transparent pass needs its own unique depth texture so it doesn't overwrite the main
+    // depth or each other, and so we can sort them back-to-front per pixel.
+
+    const depthTexTranslucent = new THREE.DepthTexture(w, h);
+    depthTexTranslucent.type = THREE.UnsignedIntType;
+    const depthTexParticles = new THREE.DepthTexture(w, h);
+    depthTexParticles.type = THREE.UnsignedIntType;
+    const depthTexClouds = new THREE.DepthTexture(w, h);
+    depthTexClouds.type = THREE.UnsignedIntType;
+
+    // 2. Translucent FBO (Water, Glass, Leaves)
+    this.rtTranslucent = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexTranslucent
+    });
+    // 3. Particles FBO
+    this.rtParticles = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexParticles
+    });
+    // 4. Clouds FBO
+    this.rtClouds = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexClouds
+    });
+
+    // Fullscreen compositing quad
+    this.oitCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.oitScene = new THREE.Scene();
+
+    this.oitMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uOpaqueColor: { value: this.rtOpaque.texture },
+        uTranslucentColor: { value: this.rtTranslucent.texture },
+        uParticlesColor: { value: this.rtParticles.texture },
+        uCloudsColor: { value: this.rtClouds.texture },
+        uOpaqueDepth: { value: depthTexture },
+        uTranslucentDepth: { value: depthTexTranslucent },
+        uParticlesDepth: { value: depthTexParticles },
+        uCloudsDepth: { value: depthTexClouds }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uOpaqueColor;
+        uniform sampler2D uTranslucentColor;
+        uniform sampler2D uParticlesColor;
+        uniform sampler2D uCloudsColor;
+        uniform sampler2D uOpaqueDepth;
+        uniform sampler2D uTranslucentDepth;
+        uniform sampler2D uParticlesDepth;
+        uniform sampler2D uCloudsDepth;
+
+        varying vec2 vUv;
+
+        struct LayerData {
+            vec4 color;
+            float depth;
+        };
+
+        // Sort descending so the furthest depth is at layers[0]. This ensures alpha blending happens back-to-front.
+        #define SWAP(a, b) if (layers[a].depth < layers[b].depth) { LayerData temp = layers[a]; layers[a] = layers[b]; layers[b] = temp; }
+
+        void main() {
+            vec4 opaqueCol    = texture2D(uOpaqueColor, vUv);
+            vec4 transCol     = texture2D(uTranslucentColor, vUv);
+            vec4 particlesCol = texture2D(uParticlesColor, vUv);
+            vec4 cloudsCol    = texture2D(uCloudsColor, vUv);
+
+            float opaqueD    = texture2D(uOpaqueDepth, vUv).r;
+            float transD     = texture2D(uTranslucentDepth, vUv).r;
+            float particlesD = texture2D(uParticlesDepth, vUv).r;
+            float cloudsD    = texture2D(uCloudsDepth, vUv).r;
+
+            // Initialize layers array.
+            // If a layer has 0 alpha (empty), push it to the back by giving it a depth of 1.0
+            LayerData layers[3];
+            layers[0] = LayerData(transCol,     transCol.a > 0.0 ? transD : 1.0);
+            layers[1] = LayerData(particlesCol, particlesCol.a > 0.0 ? particlesD : 1.0);
+            layers[2] = LayerData(cloudsCol,    cloudsCol.a > 0.0 ? cloudsD : 1.0);
+
+            // 3-element sorting network
+            SWAP(0, 2);
+            SWAP(0, 1);
+            SWAP(1, 2);
+
+            vec4 finalColor = opaqueCol;
+
+            for(int i = 0; i < 3; i++) {
+                if (layers[i].depth < opaqueD && layers[i].depth < 1.0 && layers[i].color.a > 0.0) {
+                    finalColor.rgb = mix(finalColor.rgb, layers[i].color.rgb, layers[i].color.a);
+                }
+            }
+
+            gl_FragColor = finalColor;
+        }
+      `,
+      depthWrite: false,
+      depthTest: false
+    });
+
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.oitMaterial);
+    this.oitScene.add(quad);
+  }
+
   saveInventory() {
     const serialized = this.inventorySlots.map(slot => slot ? { type: slot.type, count: slot.count } : null);
     localStorage.setItem('minecraft_clone_inventory', JSON.stringify(serialized));
@@ -273,9 +400,11 @@ class GameController {
 
   setupLighting() {
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    this.ambientLight.layers.enableAll();
     this.scene.add(this.ambientLight);
 
     this.sunLight = new THREE.DirectionalLight(0xffffff, 0.95);
+    this.sunLight.layers.enableAll();
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
     this.sunLight.shadow.mapSize.height = 2048;
@@ -501,6 +630,7 @@ class GameController {
 
         const geo = new THREE.BoxGeometry(w, h, d);
         const mesh = new THREE.Mesh(geo, this.cloudMaterial);
+        mesh.layers.set(3); // OIT Clouds Layer
 
         const ox = (Math.random() - 0.5) * 12;
         const oz = (Math.random() - 0.5) * 12;
@@ -813,12 +943,13 @@ class GameController {
       if (this.playerHealth <= 0) return;
       this.keys[e.code] = true;
 
-      // Inventory UI Shortcuts
+      // NEW SHORTCUT IMPLEMENTATION
       if (this.isInventoryOpen || this.isCraftingOpen) {
         if (this.hoveredSlotType !== null && this.hoveredSlotIndex !== null) {
           const type = this.hoveredSlotType;
           const index = this.hoveredSlotIndex;
 
+          // Number Keys (1-9): Swap item with respective slot on player's Hotbar.
           if (e.key >= '1' && e.key <= '9') {
             const hbIndex = 27 + parseInt(e.key) - 1;
             if (type !== 'hotbar' || index !== hbIndex) {
@@ -834,6 +965,7 @@ class GameController {
             }
           }
 
+          // F Key: Instantly swap it into the player's Off-hand slot.
           if (e.code === 'KeyF') {
             if (type !== 'offhand' && type !== 'craft-out') {
               const offStack = this.offhandSlot;
@@ -845,28 +977,20 @@ class GameController {
             }
           }
 
+          // Q Key / Ctrl + Q Key: Drop single item / Drop entire stack.
           if (e.code === 'KeyQ') {
+            if (type === 'craft-out') return; // Prevent exploits and data loss on craft output
             const dropAll = e.ctrlKey;
             let targetStack = this.getSlotStack(type, index);
             if (targetStack) {
               if (dropAll) {
-                // Drop entire stack (spawn item in world)
                 this.spawnDroppedItem(targetStack.type, targetStack.count);
-                if (type === 'craft-out') this.collectCraftingOutput();
-                else this.setSlotStack(type, index, null);
+                this.setSlotStack(type, index, null);
               } else {
-                // Drop 1
                 this.spawnDroppedItem(targetStack.type, 1);
-                if (type === 'craft-out') {
-                  // Cannot drop 1 from craft output usually, but if we do, it consumes the craft
-                  this.collectCraftingOutput();
-                  // Put remaining back on cursor for simplicity
-                  this.cursorStack = { type: targetStack.type, count: targetStack.count - 1 };
-                } else {
-                  targetStack.count--;
-                  if (targetStack.count <= 0) this.setSlotStack(type, index, null);
-                  else this.setSlotStack(type, index, targetStack);
-                }
+                targetStack.count--;
+                if (targetStack.count <= 0) this.setSlotStack(type, index, null);
+                else this.setSlotStack(type, index, targetStack);
               }
               this.buildInventoryGridUI();
               this.buildHotbarUI();
@@ -876,7 +1000,7 @@ class GameController {
         }
       }
 
-      // Cursor Drop outside UI
+      // Drop cursor items if cursor held outside UI
       if (e.code === 'KeyQ' && this.cursorStack && (this.hoveredSlotIndex === null || (!this.isInventoryOpen && !this.isCraftingOpen))) {
         const dropAll = e.ctrlKey;
         if (dropAll) {
@@ -989,6 +1113,12 @@ class GameController {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (this.rtOpaque) this.rtOpaque.setSize(w, h);
+      if (this.rtTranslucent) this.rtTranslucent.setSize(w, h);
+      if (this.rtParticles) this.rtParticles.setSize(w, h);
+      if (this.rtClouds) this.rtClouds.setSize(w, h);
     });
 
     // Mouse Clicks for Blocks
@@ -1326,9 +1456,7 @@ class GameController {
     if (!slotStack) return;
 
     if (type === 'craft-out') {
-      // Shift clicking craft output tries to craft as many as possible until output/inventory fills
-      // For simplicity in this prompt, just take 1 output normally via left click routing.
-      // Or move to inventory directly:
+      // Take output to inventory
       if (this.addToInventory(slotStack.type, slotStack.count)) {
         this.collectCraftingOutput();
         this.buildInventoryGridUI();
@@ -1337,17 +1465,23 @@ class GameController {
       return;
     }
 
-
-    // UI Routing Priority (Shift-Click)
     let moved = false;
-
-    // Check if crafting is open. If so, treat craft-in grid as the "Container"
     const isContainerOpen = this.isCraftingOpen;
 
+    // Shift-Click armor/shields logic (instantly equip). Map tools/equippables to offhand as the designated slot in this clone.
+    if (type !== 'offhand' && (slotStack.type === BLOCKS.STONE_PICKAXE || slotStack.type === BLOCKS.STICK)) {
+      const offStack = this.offhandSlot;
+      this.offhandSlot = { type: slotStack.type, count: slotStack.count };
+      this.setSlotStack(type, index, offStack);
+      this.buildInventoryGridUI();
+      this.buildHotbarUI();
+      return;
+    }
+
     if (type === 'craft-in') {
-      // From Container -> Hotbar -> Main Inventory
-      let remainder = this.shiftFillSlots(slotStack, 27, 35); // hotbar
-      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // main
+      // 1. From Container: Fills player Hotbar first (left-to-right), then Main Inventory (top-left to bottom-right).
+      let remainder = this.shiftFillSlots(slotStack, 27, 35); // Hotbar
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
 
       if (remainder === 0) {
         this.setSlotStack(type, index, null);
@@ -1357,10 +1491,9 @@ class GameController {
       }
       moved = true;
     } else if (type === 'main') {
-      // From Main Inventory -> Open Container (craft-in) -> Hotbar
+      // 2. From Main Inventory: Fills open container first. If none, fills Hotbar.
       let remainder = slotStack.count;
       if (isContainerOpen) {
-        // Find empty slot in craft-in
         for (let i = 0; i < 4; i++) {
           if (!this.inventoryCraftGrid[i]) {
             this.inventoryCraftGrid[i] = { type: slotStack.type, count: remainder };
@@ -1370,7 +1503,7 @@ class GameController {
         }
       }
       if (remainder > 0) {
-        remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35);
+        remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35); // Hotbar
       }
 
       if (remainder === 0) {
@@ -1381,7 +1514,7 @@ class GameController {
       }
       moved = true;
     } else if (type === 'hotbar') {
-      // From Hotbar -> Open Container -> Main
+      // 3. From Hotbar: Fills open container first. If none, fills Main Inventory.
       let remainder = slotStack.count;
       if (isContainerOpen) {
         for (let i = 0; i < 4; i++) {
@@ -1393,7 +1526,7 @@ class GameController {
         }
       }
       if (remainder > 0) {
-        remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26);
+        remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
       }
 
       if (remainder === 0) {
@@ -1410,7 +1543,6 @@ class GameController {
       else { slotStack.count = remainder; this.setSlotStack(type, index, slotStack); }
       moved = true;
     }
-
 
     if (moved) {
       this.buildInventoryGridUI();
@@ -1459,6 +1591,7 @@ class GameController {
         this.handleShiftClick(type, index);
       } else {
         if (!this.cursorStack) {
+          // Left-Click (On item): Pick up the entire stack.
           if (slotStack) {
             this.cursorStack = { type: slotStack.type, count: slotStack.count };
 
@@ -1468,14 +1601,14 @@ class GameController {
               this.setSlotStack(type, index, null);
             }
 
-            // Initiate Drag
+            // Initiate Left Drag
             this.isDraggingLeft = true;
             this.dragStartStackCount = this.cursorStack.count;
             this.draggedSlots = new Map();
-            this.draggedSlots.set(`${type}-${index}`, slotStack ? slotStack.count : 0);
+            this.draggedSlots.set(`${type}-${index}`, 0);
           }
         } else {
-          // Double click collection
+          // Double Left-Click (With held item): Instantly pull all matching items from the open inventory UI into the cursor stack until it reaches its maximum stack limit.
           if (this.lastClickTime && (Date.now() - this.lastClickTime < 250) && this.lastClickSlot === `${type}-${index}`) {
              this.collectAllMatchingToCursor();
              this.updateCursorStackUI();
@@ -1485,7 +1618,6 @@ class GameController {
           }
 
           if (type === 'craft-out') {
-            // Can only pick up matching
             if (slotStack && slotStack.type === this.cursorStack.type) {
               const max = BLOCK_INFO[slotStack.type].maxStack || 64;
               if (this.cursorStack.count + slotStack.count <= max) {
@@ -1494,9 +1626,16 @@ class GameController {
               }
             }
           } else if (!slotStack) {
-            // Place all
+            // Left-Click (With held item): Place the entire stack.
             this.setSlotStack(type, index, { type: this.cursorStack.type, count: this.cursorStack.count });
-            this.cursorStack = null;
+
+            // Initiate Left Drag
+            this.isDraggingLeft = true;
+            this.dragStartStackCount = this.cursorStack.count;
+            this.draggedSlots = new Map();
+            this.draggedSlots.set(`${type}-${index}`, 0); // we just placed it, but for drag distribution it starts at 0 for other slots
+
+            this.cursorStack.count = 0; // Keep type reference alive for drag distribution
           } else if (slotStack.type === this.cursorStack.type) {
             // Merge
             const max = BLOCK_INFO[slotStack.type].maxStack || 64;
@@ -1506,8 +1645,16 @@ class GameController {
             this.cursorStack.count -= add;
             if (this.cursorStack.count <= 0) this.cursorStack = null;
             this.setSlotStack(type, index, slotStack);
+
+            // Initiate Left Drag
+            if (this.cursorStack) {
+              this.isDraggingLeft = true;
+              this.dragStartStackCount = this.cursorStack.count;
+              this.draggedSlots = new Map();
+              this.draggedSlots.set(`${type}-${index}`, slotStack.count - add);
+            }
           } else {
-            // Swap
+            // Left-Click (With held item): Swap if occupied by different item
             const temp = { type: slotStack.type, count: slotStack.count };
             this.setSlotStack(type, index, this.cursorStack);
             this.cursorStack = temp;
@@ -1520,10 +1667,11 @@ class GameController {
       if (!this.cursorStack) {
         if (slotStack) {
           if (type === 'craft-out') {
-            // Cannot right click split craft out, just take it
+            // Take whole craft-out
             this.cursorStack = { type: slotStack.type, count: slotStack.count };
             this.collectCraftingOutput();
           } else {
+            // Right-Click (On item): Pick up exactly half the stack (round up).
             const take = Math.ceil(slotStack.count / 2);
             this.cursorStack = { type: slotStack.type, count: take };
             slotStack.count -= take;
@@ -1536,6 +1684,7 @@ class GameController {
         }
       } else {
         if (type !== 'craft-out') {
+          // Right-Click (With held item): Place exactly one single item from the cursor into the target slot.
           if (!slotStack) {
             this.setSlotStack(type, index, { type: this.cursorStack.type, count: 1 });
             this.cursorStack.count -= 1;
@@ -1544,7 +1693,7 @@ class GameController {
             // Initiate Right Drag
             this.isDraggingRight = true;
             this.draggedSlots = new Map();
-            this.draggedSlots.set(`${type}-${index}`, slotStack ? slotStack.count : 0);
+            this.draggedSlots.set(`${type}-${index}`, 0);
           } else if (slotStack.type === this.cursorStack.type) {
             const max = BLOCK_INFO[slotStack.type].maxStack || 64;
             if (slotStack.count < max) {
@@ -1555,7 +1704,7 @@ class GameController {
 
               this.isDraggingRight = true;
               this.draggedSlots = new Map();
-            this.draggedSlots.set(`${type}-${index}`, slotStack ? slotStack.count : 0);
+              this.draggedSlots.set(`${type}-${index}`, slotStack.count - 1);
             }
           }
         }
@@ -1614,10 +1763,7 @@ class GameController {
 
       const totalToDistribute = Math.min(this.dragStartStackCount, totalCapacity);
       const perSlot = Math.floor(totalToDistribute / numSlots);
-      remaining -= totalToDistribute; // whatever we distribute is removed from remaining
-
-      // Remainder distribution logic (e.g. 5 items across 3 slots = 1,1,1 and 2 remainder stays in cursor)
-      // Actually MC keeps the remainder in the cursor.
+      remaining -= totalToDistribute;
 
       let itemsLeftToGive = totalToDistribute;
 
@@ -1630,12 +1776,8 @@ class GameController {
           sStack = { type: this.cursorStack.type, count: 0 };
         }
 
-        // Ensure we don't overflow the max stack per slot
         const space = max - originalCount;
         let add = Math.min(perSlot, space);
-
-        // If there's extra capacity because a slot filled up, in standard drag it just caps.
-        // For simplicity, we just add 'add'.
 
         sStack.count = originalCount + add;
         itemsLeftToGive -= add;
@@ -2169,6 +2311,7 @@ class GameController {
         this.scene.remove(oldLight);
       }
       const pointLight = new THREE.PointLight(0xffaa55, 1.0, 15);
+      pointLight.layers.enableAll();
       pointLight.position.set(px + 0.5, py + 0.5, pz + 0.5);
       this.scene.add(pointLight);
       this.torchLights.push(pointLight);
@@ -2307,6 +2450,7 @@ class GameController {
           continue; // Cap max active particles
         }
         pMesh = new THREE.Mesh(this.sharedParticleGeometry, mat);
+        pMesh.layers.set(2); // OIT Particles Layer
         this.scene.add(pMesh);
       }
 
@@ -2636,7 +2780,50 @@ class GameController {
       this.world.updateWater(dt);
     }
 
+    // --- Order-Independent Transparency (OIT) Multi-Pass Rendering ---
+
+    // Save current clear color/alpha and camera layers
+    const oldClearColor = new THREE.Color();
+    this.renderer.getClearColor(oldClearColor);
+    const oldClearAlpha = this.renderer.getClearAlpha();
+    const oldLayers = this.camera.layers.mask;
+
+    // 1. Opaque Pass (Layer 0)
+    this.camera.layers.set(0);
+    this.renderer.setRenderTarget(this.rtOpaque);
+    this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
+
+    // Prepare clear state for transparent passes (Transparent Black, DO NOT clear depth!)
+    this.renderer.setClearColor(0x000000, 0.0);
+
+    // 2. Translucent Pass (Water/Glass, Layer 1)
+    this.camera.layers.set(1);
+    this.renderer.setRenderTarget(this.rtTranslucent);
+    // Clear color and depth since this target has its own independent depth texture
+    this.renderer.clear(true, true, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 3. Particles Pass (Layer 2)
+    this.camera.layers.set(2);
+    this.renderer.setRenderTarget(this.rtParticles);
+    this.renderer.clear(true, true, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 4. Clouds Pass (Layer 3)
+    this.camera.layers.set(3);
+    this.renderer.setRenderTarget(this.rtClouds);
+    this.renderer.clear(true, true, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 5. Compositing Pass to Screen
+    this.renderer.setRenderTarget(null); // Default screen buffer
+    this.renderer.setClearColor(oldClearColor, oldClearAlpha);
+    this.renderer.clear();
+    this.renderer.render(this.oitScene, this.oitCamera);
+
+    // Restore camera state
+    this.camera.layers.mask = oldLayers;
   }
 
 }

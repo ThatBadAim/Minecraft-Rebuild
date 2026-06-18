@@ -68,11 +68,16 @@ for (const key in BLOCK_INFO) {
 
   // Storage Quantities & Stacking Limits
   const type = BLOCK_INFO[key].type;
-  if ([BLOCKS.STONE_PICKAXE].includes(type)) {
+  // Unstackable (Max 1): Tools, weapons, armor, potions, boats, and items holding unique internal data
+  if ([BLOCKS.STONE_PICKAXE, BLOCKS.WATER].includes(type)) {
     BLOCK_INFO[key].maxStack = 1;
-  } else if ([BLOCKS.MEAT, BLOCKS.WOOL].includes(type)) {
+  }
+  // Limited Stacking (Max 16): Specific utility/throwable items
+  else if ([BLOCKS.MEAT, BLOCKS.WOOL, BLOCKS.SLIME, BLOCKS.COBWEB, BLOCKS.TNT, BLOCKS.ICE, BLOCKS.STICK, BLOCKS.TORCH].includes(type)) {
     BLOCK_INFO[key].maxStack = 16;
-  } else {
+  }
+  // Standard Stacking (Max 64): Standard blocks and materials
+  else {
     BLOCK_INFO[key].maxStack = 64;
   }
 }
@@ -783,6 +788,7 @@ export class WorldManager {
       chunk.meshTransparent = new THREE.Mesh(geo, this.materialTransparent);
       chunk.meshTransparent.castShadow = true;
       chunk.meshTransparent.receiveShadow = true;
+      chunk.meshTransparent.layers.set(1); // OIT Translucent Layer
       this.scene.add(chunk.meshTransparent);
       this.meshList.push(chunk.meshTransparent);
     }
