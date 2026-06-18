@@ -22,6 +22,9 @@ class GameController {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
+    // Order-Independent Transparency (OIT) Framebuffers setup
+    this.setupOITRenderTargets();
+
     // 2. Physics & World
     this.physics = new PhysicsEngine();
     this.playerHealth = 20;
@@ -252,6 +255,129 @@ class GameController {
     this.animate();
   }
 
+  setupOITRenderTargets() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    // Create a base depth texture to be shared or copied across passes
+    const depthTexture = new THREE.DepthTexture(w, h);
+    depthTexture.type = THREE.UnsignedIntType;
+
+    // 1. Opaque FBO (Solid blocks, entities)
+    this.rtOpaque = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      depthTexture: depthTexture
+    });
+
+    // For true Order-Independent Transparency sorting in the compositing shader, each
+    // transparent pass needs its own unique depth texture so it doesn't overwrite the main
+    // depth or each other, and so we can sort them back-to-front per pixel.
+
+    const depthTexTranslucent = new THREE.DepthTexture(w, h);
+    depthTexTranslucent.type = THREE.UnsignedIntType;
+    const depthTexParticles = new THREE.DepthTexture(w, h);
+    depthTexParticles.type = THREE.UnsignedIntType;
+    const depthTexClouds = new THREE.DepthTexture(w, h);
+    depthTexClouds.type = THREE.UnsignedIntType;
+
+    // 2. Translucent FBO (Water, Glass, Leaves)
+    this.rtTranslucent = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexTranslucent
+    });
+    // 3. Particles FBO
+    this.rtParticles = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexParticles
+    });
+    // 4. Clouds FBO
+    this.rtClouds = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexClouds
+    });
+
+    // Fullscreen compositing quad
+    this.oitCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.oitScene = new THREE.Scene();
+
+    this.oitMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uOpaqueColor: { value: this.rtOpaque.texture },
+        uTranslucentColor: { value: this.rtTranslucent.texture },
+        uParticlesColor: { value: this.rtParticles.texture },
+        uCloudsColor: { value: this.rtClouds.texture },
+        uOpaqueDepth: { value: depthTexture },
+        uTranslucentDepth: { value: depthTexTranslucent },
+        uParticlesDepth: { value: depthTexParticles },
+        uCloudsDepth: { value: depthTexClouds }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uOpaqueColor;
+        uniform sampler2D uTranslucentColor;
+        uniform sampler2D uParticlesColor;
+        uniform sampler2D uCloudsColor;
+        uniform sampler2D uOpaqueDepth;
+        uniform sampler2D uTranslucentDepth;
+        uniform sampler2D uParticlesDepth;
+        uniform sampler2D uCloudsDepth;
+
+        varying vec2 vUv;
+
+        struct LayerData {
+            vec4 color;
+            float depth;
+        };
+
+        #define SWAP(a, b) if (layers[a].depth > layers[b].depth) { LayerData temp = layers[a]; layers[a] = layers[b]; layers[b] = temp; }
+
+        void main() {
+            vec4 opaqueCol    = texture2D(uOpaqueColor, vUv);
+            vec4 transCol     = texture2D(uTranslucentColor, vUv);
+            vec4 particlesCol = texture2D(uParticlesColor, vUv);
+            vec4 cloudsCol    = texture2D(uCloudsColor, vUv);
+
+            float opaqueD    = texture2D(uOpaqueDepth, vUv).r;
+            float transD     = texture2D(uTranslucentDepth, vUv).r;
+            float particlesD = texture2D(uParticlesDepth, vUv).r;
+            float cloudsD    = texture2D(uCloudsDepth, vUv).r;
+
+            // Initialize layers array.
+            // If a layer has 0 alpha (empty), push it to the back by giving it a depth of 1.0
+            LayerData layers[3];
+            layers[0] = LayerData(transCol,     transCol.a > 0.0 ? transD : 1.0);
+            layers[1] = LayerData(particlesCol, particlesCol.a > 0.0 ? particlesD : 1.0);
+            layers[2] = LayerData(cloudsCol,    cloudsCol.a > 0.0 ? cloudsD : 1.0);
+
+            // 3-element sorting network
+            SWAP(0, 2);
+            SWAP(0, 1);
+            SWAP(1, 2);
+
+            vec4 finalColor = opaqueCol;
+
+            for(int i = 0; i < 3; i++) {
+                if (layers[i].depth < opaqueD && layers[i].depth < 1.0 && layers[i].color.a > 0.0) {
+                    finalColor.rgb = mix(finalColor.rgb, layers[i].color.rgb, layers[i].color.a);
+                }
+            }
+
+            gl_FragColor = finalColor;
+        }
+      `,
+      depthWrite: false,
+      depthTest: false
+    });
+
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.oitMaterial);
+    this.oitScene.add(quad);
+  }
+
   saveInventory() {
     const serialized = this.inventorySlots.map(slot => slot ? { type: slot.type, count: slot.count } : null);
     localStorage.setItem('minecraft_clone_inventory', JSON.stringify(serialized));
@@ -273,9 +399,11 @@ class GameController {
 
   setupLighting() {
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    this.ambientLight.layers.enableAll();
     this.scene.add(this.ambientLight);
 
     this.sunLight = new THREE.DirectionalLight(0xffffff, 0.95);
+    this.sunLight.layers.enableAll();
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
     this.sunLight.shadow.mapSize.height = 2048;
@@ -501,6 +629,7 @@ class GameController {
 
         const geo = new THREE.BoxGeometry(w, h, d);
         const mesh = new THREE.Mesh(geo, this.cloudMaterial);
+        mesh.layers.set(3); // OIT Clouds Layer
 
         const ox = (Math.random() - 0.5) * 12;
         const oz = (Math.random() - 0.5) * 12;
@@ -983,6 +1112,12 @@ class GameController {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (this.rtOpaque) this.rtOpaque.setSize(w, h);
+      if (this.rtTranslucent) this.rtTranslucent.setSize(w, h);
+      if (this.rtParticles) this.rtParticles.setSize(w, h);
+      if (this.rtClouds) this.rtClouds.setSize(w, h);
     });
 
     // Mouse Clicks for Blocks
@@ -2175,6 +2310,7 @@ class GameController {
         this.scene.remove(oldLight);
       }
       const pointLight = new THREE.PointLight(0xffaa55, 1.0, 15);
+      pointLight.layers.enableAll();
       pointLight.position.set(px + 0.5, py + 0.5, pz + 0.5);
       this.scene.add(pointLight);
       this.torchLights.push(pointLight);
@@ -2313,6 +2449,7 @@ class GameController {
           continue; // Cap max active particles
         }
         pMesh = new THREE.Mesh(this.sharedParticleGeometry, mat);
+        pMesh.layers.set(2); // OIT Particles Layer
         this.scene.add(pMesh);
       }
 
@@ -2642,7 +2779,50 @@ class GameController {
       this.world.updateWater(dt);
     }
 
+    // --- Order-Independent Transparency (OIT) Multi-Pass Rendering ---
+
+    // Save current clear color/alpha and camera layers
+    const oldClearColor = new THREE.Color();
+    this.renderer.getClearColor(oldClearColor);
+    const oldClearAlpha = this.renderer.getClearAlpha();
+    const oldLayers = this.camera.layers.mask;
+
+    // 1. Opaque Pass (Layer 0)
+    this.camera.layers.set(0);
+    this.renderer.setRenderTarget(this.rtOpaque);
+    this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
+
+    // Prepare clear state for transparent passes (Transparent Black, DO NOT clear depth!)
+    this.renderer.setClearColor(0x000000, 0.0);
+
+    // 2. Translucent Pass (Water/Glass, Layer 1)
+    this.camera.layers.set(1);
+    this.renderer.setRenderTarget(this.rtTranslucent);
+    // Clear only color, retain depth buffer shared from opaque pass for occlusion
+    this.renderer.clear(true, false, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 3. Particles Pass (Layer 2)
+    this.camera.layers.set(2);
+    this.renderer.setRenderTarget(this.rtParticles);
+    this.renderer.clear(true, false, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 4. Clouds Pass (Layer 3)
+    this.camera.layers.set(3);
+    this.renderer.setRenderTarget(this.rtClouds);
+    this.renderer.clear(true, false, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 5. Compositing Pass to Screen
+    this.renderer.setRenderTarget(null); // Default screen buffer
+    this.renderer.setClearColor(oldClearColor, oldClearAlpha);
+    this.renderer.clear();
+    this.renderer.render(this.oitScene, this.oitCamera);
+
+    // Restore camera state
+    this.camera.layers.mask = oldLayers;
   }
 
 }

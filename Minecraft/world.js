@@ -788,6 +788,7 @@ export class WorldManager {
       chunk.meshTransparent = new THREE.Mesh(geo, this.materialTransparent);
       chunk.meshTransparent.castShadow = true;
       chunk.meshTransparent.receiveShadow = true;
+      chunk.meshTransparent.layers.set(1); // OIT Translucent Layer
       this.scene.add(chunk.meshTransparent);
       this.meshList.push(chunk.meshTransparent);
     }
