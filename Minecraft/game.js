@@ -334,7 +334,8 @@ class GameController {
             float depth;
         };
 
-        #define SWAP(a, b) if (layers[a].depth > layers[b].depth) { LayerData temp = layers[a]; layers[a] = layers[b]; layers[b] = temp; }
+        // Sort descending so the furthest depth is at layers[0]. This ensures alpha blending happens back-to-front.
+        #define SWAP(a, b) if (layers[a].depth < layers[b].depth) { LayerData temp = layers[a]; layers[a] = layers[b]; layers[b] = temp; }
 
         void main() {
             vec4 opaqueCol    = texture2D(uOpaqueColor, vUv);
@@ -2799,20 +2800,20 @@ class GameController {
     // 2. Translucent Pass (Water/Glass, Layer 1)
     this.camera.layers.set(1);
     this.renderer.setRenderTarget(this.rtTranslucent);
-    // Clear only color, retain depth buffer shared from opaque pass for occlusion
-    this.renderer.clear(true, false, false);
+    // Clear color and depth since this target has its own independent depth texture
+    this.renderer.clear(true, true, false);
     this.renderer.render(this.scene, this.camera);
 
     // 3. Particles Pass (Layer 2)
     this.camera.layers.set(2);
     this.renderer.setRenderTarget(this.rtParticles);
-    this.renderer.clear(true, false, false);
+    this.renderer.clear(true, true, false);
     this.renderer.render(this.scene, this.camera);
 
     // 4. Clouds Pass (Layer 3)
     this.camera.layers.set(3);
     this.renderer.setRenderTarget(this.rtClouds);
-    this.renderer.clear(true, false, false);
+    this.renderer.clear(true, true, false);
     this.renderer.render(this.scene, this.camera);
 
     // 5. Compositing Pass to Screen
