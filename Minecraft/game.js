@@ -38,6 +38,11 @@ class GameController {
     this.entityManager = new EntityManager(this.scene, (dmg) => this.takeDamage(dmg), (type) => this.handleCollect(type));
     this.world = new WorldManager(this.scene, (cx, cz) => {
       this.entityManager.spawnAnimalInChunk(cx, cz, this.world, this.gameTime);
+    }, (type, x, y, z) => {
+      // OnBlockBroken callback for redstone logic
+      if (this.entityManager) {
+        this.entityManager.spawnCollectible(type, x + 0.5, y + 0.3, z + 0.5);
+      }
     });
 
     // 3. User Controls
@@ -168,8 +173,8 @@ class GameController {
     this.iconDataUrlCache = {};
 
     // Oxygen / underwater system
-    this.oxygenLevel = 30.0; // 30 seconds of breath
-    this.maxOxygen = 30.0;
+    this.oxygenLevel = 15.0; // 15 seconds of breath
+    this.maxOxygen = 15.0;
     this.oxygenDamageTimer = 0;
 
     // Sprint FOV
@@ -2624,7 +2629,10 @@ class GameController {
     this.fpsFrames++;
     const now = performance.now();
     if (now - this.fpsLastUpdate >= 1000) {
-      document.getElementById('fps-counter').innerText = this.fpsFrames;
+      const fpsCounter = document.getElementById('fps-counter');
+      if (fpsCounter) {
+        fpsCounter.innerText = this.fpsFrames;
+      }
       this.fpsFrames = 0;
       this.fpsLastUpdate = now;
     }
