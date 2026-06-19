@@ -38,6 +38,7 @@ export class PhysicsEngine {
   }
 
   getCurrentHeight() {
+    if (this.inWater) return 1.0;
     return this.isCrouching ? this.playerCrouchHeight : this.playerHeight;
   }
 
@@ -95,6 +96,22 @@ export class PhysicsEngine {
     const isOnIce = blockBelow && blockBelow.type === BLOCKS.ICE;
     const isOnSlime = blockBelow && blockBelow.type === BLOCKS.SLIME;
     const inCobweb = (feetBlock && feetBlock.type === BLOCKS.COBWEB) || (bodyBlock && bodyBlock.type === BLOCKS.COBWEB);
+
+    if (this.inWater) {
+      let bubbleY = feetY - 1;
+      let bubbleBlock = world.getBlock(px, bubbleY, pz);
+      while (bubbleBlock && bubbleBlock.type === BLOCKS.WATER) {
+        bubbleY--;
+        bubbleBlock = world.getBlock(px, bubbleY, pz);
+      }
+      if (bubbleBlock) {
+        if (bubbleBlock.type === BLOCKS.SOUL_SAND) {
+          this.velocity.y += 0.5 * tickRate; // Bubble column up
+        } else if (bubbleBlock.type === BLOCKS.MAGMA_BLOCK) {
+          this.velocity.y -= 0.5 * tickRate; // Bubble column down
+        }
+      }
+    }
 
     if (inCobweb) {
       this.velocity.x *= 0.25;
@@ -178,13 +195,13 @@ export class PhysicsEngine {
     let currentTerminalVelocity = -50.0;
 
     if (this.inWater) {
-      currentGravity = -8.0;
-      currentTerminalVelocity = -5.0;
+      currentGravity = 0.0;
+      currentTerminalVelocity = -2.0;
     }
 
     if (inCobweb) {
         this.velocity.y = -0.05;
-    } else if (!this.onGround) {
+    } else if (!this.onGround || this.inWater) {
       this.velocity.y += currentGravity * tickRate;
       if (this.velocity.y < currentTerminalVelocity) {
         this.velocity.y = currentTerminalVelocity;
@@ -192,9 +209,15 @@ export class PhysicsEngine {
     }
 
     if (this.inWater) {
+      // Custom buoyancy
+      this.velocity.y += 0.5 * tickRate; // Float upwards
+      if (this.velocity.y > 1.0) this.velocity.y = 1.0;
+
       if (keys['Space']) {
         this.velocity.y = 0.15;
         this.onGround = false;
+      } else if (this.isCrouching) {
+        this.velocity.y = -0.15; // Swim down
       }
     } else if (this.onGround && keys['Space']) {
       this.velocity.y = 0.42;
