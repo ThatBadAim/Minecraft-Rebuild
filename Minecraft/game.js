@@ -2624,7 +2624,10 @@ class GameController {
     this.fpsFrames++;
     const now = performance.now();
     if (now - this.fpsLastUpdate >= 1000) {
-      document.getElementById('fps-counter').innerText = this.fpsFrames;
+      const fpsCounter = document.getElementById('fps-counter');
+      if (fpsCounter) {
+        fpsCounter.innerText = this.fpsFrames;
+      }
       this.fpsFrames = 0;
       this.fpsLastUpdate = now;
     }
