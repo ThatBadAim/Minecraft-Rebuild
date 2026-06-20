@@ -2,6 +2,7 @@ import { PhysicsEngine } from './physics.js';
 import { WorldManager, BLOCKS, BLOCK_INFO } from './world.js';
 import { gameAudio } from './audio.js';
 import { EntityManager } from './entities.js';
+import { UIEngine, TitleScreen } from './menu_ui.js';
 
 class GameController {
   constructor() {
@@ -216,6 +217,10 @@ class GameController {
     this.lastPosString = '0, 60, 0';
 
     // Initialize UI and Events
+    this.uiEngine = new UIEngine('mc-ui-canvas');
+    this.uiEngine.setScreen(new TitleScreen());
+    window.gameController = this; // Expose for the UI to be able to lock controls and start the game
+
     this.setupEvents();
     this.buildHotbarUI();
     this.buildInventoryGridUI();
@@ -780,9 +785,9 @@ class GameController {
     if (goScreen) {
       goScreen.classList.remove('hidden');
     }
-    const menuScreen = document.getElementById('screen-menu');
-    if (menuScreen) {
-      menuScreen.classList.add('hidden');
+    // We handle menu via uiEngine now
+    if (this.uiEngine && this.uiEngine.canvas) {
+      this.uiEngine.canvas.style.display = 'none';
     }
   }
 
@@ -799,97 +804,20 @@ class GameController {
   }
 
   setupEvents() {
-    const playBtn = document.getElementById('btn-play');
-    const menuScreen = document.getElementById('screen-menu');
     const inventoryScreen = document.getElementById('inventory-screen');
     const craftingScreen = document.getElementById('crafting-screen');
 
-    // Load settings from localStorage
-    const savedVol = localStorage.getItem('minecraft_clone_volume');
-    const savedFov = localStorage.getItem('minecraft_clone_fov');
-    const savedDist = localStorage.getItem('minecraft_clone_render_dist');
-    const savedSens = localStorage.getItem('minecraft_clone_sensitivity');
-
-    const volVal = savedVol !== null ? parseFloat(savedVol) : 0.7;
-    const fovVal = savedFov !== null ? parseInt(savedFov, 10) : 75;
-    const distVal = savedDist !== null ? parseInt(savedDist, 10) : 6;
-    const sensVal = savedSens !== null ? parseFloat(savedSens) : 1.0;
-
-    // Apply values to UI elements
-    const sliderVol = document.getElementById('slider-volume');
-    const sliderFov = document.getElementById('slider-fov');
-    const sliderDist = document.getElementById('slider-render-dist');
-    const sliderSens = document.getElementById('slider-sensitivity');
-
-    const labelVol = document.getElementById('val-volume');
-    const labelFov = document.getElementById('val-fov');
-    const labelDist = document.getElementById('val-render-dist');
-    const labelSens = document.getElementById('val-sensitivity');
-
-    if (sliderVol) {
-      sliderVol.value = volVal;
-      labelVol.innerText = Math.round(volVal * 100) + '%';
-      gameAudio.setVolume(volVal);
-      sliderVol.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        labelVol.innerText = Math.round(val * 100) + '%';
-        gameAudio.setVolume(val);
-        localStorage.setItem('minecraft_clone_volume', val);
-      });
-    }
-
-    if (sliderFov) {
-      sliderFov.value = fovVal;
-      labelFov.innerText = fovVal + '°';
-      this.camera.fov = fovVal;
-      this.camera.updateProjectionMatrix();
-      sliderFov.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        labelFov.innerText = val + '°';
-        this.camera.fov = val;
-        this.camera.updateProjectionMatrix();
-        localStorage.setItem('minecraft_clone_fov', val);
-      });
-    }
-
-    if (sliderDist) {
-      sliderDist.value = distVal;
-      labelDist.innerText = distVal + ' Chunks';
-      this.world.renderRadius = distVal;
-      sliderDist.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        labelDist.innerText = val + ' Chunks';
-        this.world.renderRadius = val;
-        localStorage.setItem('minecraft_clone_render_dist', val);
-      });
-    }
-
-    if (sliderSens) {
-      sliderSens.value = sensVal;
-      labelSens.innerText = sensVal.toFixed(1) + 'x';
-      this.controls.pointerSpeed = sensVal;
-      sliderSens.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        labelSens.innerText = val.toFixed(1) + 'x';
-        this.controls.pointerSpeed = val;
-        localStorage.setItem('minecraft_clone_sensitivity', val);
-      });
-    }
-
     // Controls locking
-    playBtn.addEventListener('click', () => {
-      if (this.playerHealth <= 0) return;
-      this.controls.lock();
-      gameAudio.resume();
-    });
-
     this.controls.addEventListener('lock', () => {
       if (this.playerHealth <= 0) return;
-      menuScreen.classList.add('hidden');
+      if (this.uiEngine && this.uiEngine.canvas) {
+        this.uiEngine.canvas.style.display = 'none';
+      }
       inventoryScreen.classList.add('hidden');
       craftingScreen.classList.add('hidden');
       this.isInventoryOpen = false;
       this.isCraftingOpen = false;
+      gameAudio.resume();
     });
 
     this.controls.addEventListener('unlock', () => {
@@ -902,11 +830,13 @@ class GameController {
       }
       if (this.playerHealth <= 0) {
         document.getElementById('screen-gameover').classList.remove('hidden');
-        document.getElementById('screen-menu').classList.add('hidden');
         return;
       }
       if (!this.isInventoryOpen && !this.isCraftingOpen) {
-        menuScreen.classList.remove('hidden');
+        // Show our new UI Engine canvas when controls are unlocked
+        if (this.uiEngine && this.uiEngine.canvas) {
+            this.uiEngine.canvas.style.display = 'block';
+        }
       }
     });
 
@@ -1041,7 +971,7 @@ class GameController {
           this.controls.unlock();
           inventoryScreen.classList.remove('hidden');
           craftingScreen.classList.add('hidden');
-          menuScreen.classList.add('hidden');
+          if (this.uiEngine && this.uiEngine.canvas) this.uiEngine.canvas.style.display = 'none';
           this.buildInventoryGridUI(); // Draw grids dynamically!
         }
       }
@@ -1056,7 +986,7 @@ class GameController {
           this.controls.unlock();
           craftingScreen.classList.remove('hidden');
           inventoryScreen.classList.add('hidden');
-          menuScreen.classList.add('hidden');
+          if (this.uiEngine && this.uiEngine.canvas) this.uiEngine.canvas.style.display = 'none';
           this.buildCraftingUI();
         }
       }
@@ -1152,7 +1082,7 @@ class GameController {
             this.controls.unlock();
             craftingScreen.classList.remove('hidden');
             inventoryScreen.classList.add('hidden');
-            menuScreen.classList.add('hidden');
+            if (this.uiEngine && this.uiEngine.canvas) this.uiEngine.canvas.style.display = 'none';
             this.buildCraftingUI();
             return;
           }
