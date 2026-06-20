@@ -71,39 +71,8 @@
     </div>
   </div>
 
-  <!-- Menu / Play Screen Overlay -->
-  <div id="screen-menu" class="overlay options-overlay">
-    <div class="mc-panel options-panel">
-      <h2>Options</h2>
-
-      <div class="options-grid">
-        <div class="mc-slider-container">
-          <div class="mc-slider-label">FOV: <span id="val-fov">75</span></div>
-          <input type="range" id="slider-fov" class="mc-slider" min="60" max="100" step="5" value="75">
-        </div>
-        <div class="mc-slider-container">
-          <div class="mc-slider-label">Render Distance: <span id="val-render-dist">6</span></div>
-          <input type="range" id="slider-render-dist" class="mc-slider" min="4" max="10" step="1" value="6">
-        </div>
-        <div class="mc-slider-container">
-          <div class="mc-slider-label">Master Volume: <span id="val-volume">70%</span></div>
-          <input type="range" id="slider-volume" class="mc-slider" min="0" max="1" step="0.05" value="0.7">
-        </div>
-        <div class="mc-slider-container">
-          <div class="mc-slider-label">Sensitivity: <span id="val-sensitivity">1.0x</span></div>
-          <input type="range" id="slider-sensitivity" class="mc-slider" min="0.5" max="2.0" step="0.1" value="1.0">
-        </div>
-      </div>
-
-      <div class="options-sub-menu">
-        <button class="btn-mc wide">Controls...</button>
-        <button class="btn-mc wide">Video Settings...</button>
-        <button class="btn-mc wide">Music & Sounds...</button>
-      </div>
-
-      <button id="btn-play" class="btn-mc wide done-btn">Done</button>
-    </div>
-  </div>
+  <!-- UI Engine Canvas -->
+  <canvas id="mc-ui-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 100;"></canvas>
 
   <!-- Floating Cursor Stack -->
   <div id="cursor-stack" class="hidden"></div>
