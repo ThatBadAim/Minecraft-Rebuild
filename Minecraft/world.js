@@ -30,7 +30,30 @@ export const BLOCKS = {
   SLIME: 25,
   COBWEB: 26,
   SOUL_SAND: 27,
-  MAGMA_BLOCK: 28
+  MAGMA_BLOCK: 28,
+
+  NETHERRACK: 29,
+  GLOWSTONE: 30,
+  CRIMSON_NYLIUM: 31,
+  CRIMSON_STALK: 32,
+  NETHER_WART: 33,
+  WEEPING_VINES: 34,
+  WARPED_NYLIUM: 35,
+  WARPED_STALK: 36,
+  SHROOMLIGHT: 37,
+  SOUL_SOIL: 38,
+  BONE_BLOCK: 39,
+  SOUL_FIRE: 40,
+  BASALT: 41,
+  BLACKSTONE: 42,
+  LAVA: 43,
+  END_STONE: 44,
+  OBSIDIAN: 45,
+  END_CRYSTAL: 46,
+  CHORUS_STEM: 47,
+  CHORUS_FLOWER: 48,
+  PURPUR_BLOCK: 49,
+  END_STONE_BRICKS: 50
 };
 
 // Metadata for blocks
@@ -63,7 +86,30 @@ export const BLOCK_INFO = {
   [BLOCKS.SLIME]: { name: 'Slime Block', solid: true, transparent: true, uvs: { top: [6, 3], side: [6, 3], bottom: [6, 3] } },
   [BLOCKS.COBWEB]: { name: 'Cobweb', solid: false, transparent: true, uvs: { top: [7, 3], side: [7, 3], bottom: [7, 3] } },
   [BLOCKS.SOUL_SAND]: { name: 'Soul Sand', solid: true, transparent: false, uvs: { top: [2, 0], side: [2, 0], bottom: [2, 0] } },
-  [BLOCKS.MAGMA_BLOCK]: { name: 'Magma Block', solid: true, transparent: false, uvs: { top: [1, 1], side: [1, 1], bottom: [1, 1] } }
+  [BLOCKS.MAGMA_BLOCK]: { name: 'Magma Block', solid: true, transparent: false, uvs: { top: [1, 1], side: [1, 1], bottom: [1, 1] } },
+
+  [BLOCKS.NETHERRACK]: { name: 'Netherrack', solid: true, transparent: false, uvs: { top: [0, 4], side: [0, 4], bottom: [0, 4] } },
+  [BLOCKS.GLOWSTONE]: { name: 'Glowstone', solid: true, transparent: false, uvs: { top: [1, 4], side: [1, 4], bottom: [1, 4] } },
+  [BLOCKS.CRIMSON_NYLIUM]: { name: 'Crimson Nylium', solid: true, transparent: false, uvs: { top: [2, 4], side: [3, 4], bottom: [0, 4] } },
+  [BLOCKS.CRIMSON_STALK]: { name: 'Crimson Stalk', solid: true, transparent: false, uvs: { top: [4, 4], side: [5, 4], bottom: [4, 4] } },
+  [BLOCKS.NETHER_WART]: { name: 'Nether Wart Block', solid: true, transparent: false, uvs: { top: [6, 4], side: [6, 4], bottom: [6, 4] } },
+  [BLOCKS.WEEPING_VINES]: { name: 'Weeping Vines', solid: false, transparent: true, uvs: { top: [7, 4], side: [7, 4], bottom: [7, 4] } },
+  [BLOCKS.WARPED_NYLIUM]: { name: 'Warped Nylium', solid: true, transparent: false, uvs: { top: [0, 5], side: [1, 5], bottom: [0, 4] } },
+  [BLOCKS.WARPED_STALK]: { name: 'Warped Stalk', solid: true, transparent: false, uvs: { top: [2, 5], side: [3, 5], bottom: [2, 5] } },
+  [BLOCKS.SHROOMLIGHT]: { name: 'Shroomlight', solid: true, transparent: false, uvs: { top: [4, 5], side: [4, 5], bottom: [4, 5] } },
+  [BLOCKS.SOUL_SOIL]: { name: 'Soul Soil', solid: true, transparent: false, uvs: { top: [5, 5], side: [5, 5], bottom: [5, 5] } },
+  [BLOCKS.BONE_BLOCK]: { name: 'Bone Block', solid: true, transparent: false, uvs: { top: [6, 5], side: [7, 5], bottom: [6, 5] } },
+  [BLOCKS.SOUL_FIRE]: { name: 'Soul Fire', solid: false, transparent: true, uvs: { top: [0, 6], side: [0, 6], bottom: [0, 6] } },
+  [BLOCKS.BASALT]: { name: 'Basalt', solid: true, transparent: false, uvs: { top: [1, 6], side: [2, 6], bottom: [1, 6] } },
+  [BLOCKS.BLACKSTONE]: { name: 'Blackstone', solid: true, transparent: false, uvs: { top: [3, 6], side: [3, 6], bottom: [3, 6] } },
+  [BLOCKS.LAVA]: { name: 'Lava', solid: false, transparent: true, alphaTest: 0.1, uvs: { top: [4, 6], side: [4, 6], bottom: [4, 6] } },
+  [BLOCKS.END_STONE]: { name: 'End Stone', solid: true, transparent: false, uvs: { top: [5, 6], side: [5, 6], bottom: [5, 6] } },
+  [BLOCKS.OBSIDIAN]: { name: 'Obsidian', solid: true, transparent: false, uvs: { top: [6, 6], side: [6, 6], bottom: [6, 6] } },
+  [BLOCKS.END_CRYSTAL]: { name: 'End Crystal', solid: false, transparent: true, uvs: { top: [7, 6], side: [7, 6], bottom: [7, 6] } },
+  [BLOCKS.CHORUS_STEM]: { name: 'Chorus Stem', solid: true, transparent: false, uvs: { top: [0, 7], side: [0, 7], bottom: [0, 7] } },
+  [BLOCKS.CHORUS_FLOWER]: { name: 'Chorus Flower', solid: true, transparent: false, uvs: { top: [1, 7], side: [1, 7], bottom: [1, 7] } },
+  [BLOCKS.PURPUR_BLOCK]: { name: 'Purpur Block', solid: true, transparent: false, uvs: { top: [2, 7], side: [2, 7], bottom: [2, 7] } },
+  [BLOCKS.END_STONE_BRICKS]: { name: 'End Stone Bricks', solid: true, transparent: false, uvs: { top: [3, 7], side: [3, 7], bottom: [3, 7] } }
 };
 
 // Add type explicitly to BLOCK_INFO objects
@@ -507,6 +553,284 @@ function generateTextureAtlas(onCanvasCreated) {
         ctx.fillStyle = '#fff4aa';
         ctx.fillRect(tx + 7, ty + 1, 1, 1);
       }
+
+      // Additional block procedural generation
+      else if (id >= 32) {
+          if (id === 32) { // Netherrack (0, 4) -> 32
+              ctx.fillStyle = '#6e2b2f';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.7) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#8c353b' : '#542024';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 33) { // Glowstone (1, 4) -> 33
+              ctx.fillStyle = '#ffdb5c';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.6) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#e6b03c' : '#ffffff';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 34) { // Crimson Nylium Top (2, 4) -> 34
+              ctx.fillStyle = '#8f2020';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.5) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#691515' : '#bd2f2f';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 35) { // Crimson Nylium Side (3, 4) -> 35
+              ctx.fillStyle = '#6e2b2f';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#8f2020';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, 3);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  const depth = 2 + Math.floor(Math.random() * 3);
+                  ctx.fillRect(tx + i, ty, 1, depth);
+              }
+          }
+          else if (id === 36) { // Crimson Stalk Top (4, 4) -> 36
+              ctx.fillStyle = '#59202c';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeStyle = '#421620';
+              ctx.strokeRect(tx+2, ty+2, TEXTURE_SIZE-4, TEXTURE_SIZE-4);
+          }
+          else if (id === 37) { // Crimson Stalk Side (5, 4) -> 37
+              ctx.fillStyle = '#421620';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#612230';
+              for (let i = 0; i < TEXTURE_SIZE; i += 3) {
+                  ctx.fillRect(tx + i, ty, 1.5, TEXTURE_SIZE);
+              }
+          }
+          else if (id === 38) { // Nether Wart Block (6, 4) -> 38
+              ctx.fillStyle = '#731414';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.6) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#4a0808' : '#9c1c1c';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 39) { // Weeping Vines (7, 4) -> 39
+              ctx.fillStyle = 'rgba(0,0,0,0)';
+              ctx.clearRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#a82323';
+              for(let i=3; i<13; i+=4) {
+                 ctx.fillRect(tx + i, ty, 2, TEXTURE_SIZE);
+                 for(let j=0; j<TEXTURE_SIZE; j+=3) {
+                    if(Math.random()>0.3) ctx.fillRect(tx+i-1, ty+j, 4, 2);
+                 }
+              }
+          }
+          else if (id === 40) { // Warped Nylium Top (0, 5) -> 40
+              ctx.fillStyle = '#148774';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.5) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#0d6153' : '#1fb39b';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 41) { // Warped Nylium Side (1, 5) -> 41
+              ctx.fillStyle = '#6e2b2f';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#148774';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, 3);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  const depth = 2 + Math.floor(Math.random() * 3);
+                  ctx.fillRect(tx + i, ty, 1, depth);
+              }
+          }
+          else if (id === 42) { // Warped Stalk Top (2, 5) -> 42
+              ctx.fillStyle = '#3a8e85';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeStyle = '#25635c';
+              ctx.strokeRect(tx+2, ty+2, TEXTURE_SIZE-4, TEXTURE_SIZE-4);
+          }
+          else if (id === 43) { // Warped Stalk Side (3, 5) -> 43
+              ctx.fillStyle = '#25635c';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#3a8e85';
+              for (let i = 0; i < TEXTURE_SIZE; i += 3) {
+                  ctx.fillRect(tx + i, ty, 1.5, TEXTURE_SIZE);
+              }
+          }
+          else if (id === 44) { // Shroomlight (4, 5) -> 44
+              ctx.fillStyle = '#e69a5e';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.6) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#f5c69a' : '#d47b35';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 45) { // Soul Soil (5, 5) -> 45
+              ctx.fillStyle = '#4a3b32';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.7) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#362922' : '#5e4b41';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 46) { // Bone Block Top (6, 5) -> 46
+              ctx.fillStyle = '#d4d0b8';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#b3b098';
+              ctx.fillRect(tx+4, ty+4, TEXTURE_SIZE-8, TEXTURE_SIZE-8);
+          }
+          else if (id === 47) { // Bone Block Side (7, 5) -> 47
+              ctx.fillStyle = '#d4d0b8';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#b3b098';
+              for (let i = 0; i < TEXTURE_SIZE; i += 4) {
+                  ctx.fillRect(tx + i, ty, 1, TEXTURE_SIZE);
+              }
+          }
+          else if (id === 48) { // Soul Fire (0, 6) -> 48
+              ctx.fillStyle = 'rgba(0,0,0,0)';
+              ctx.clearRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#2fbdd4';
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                 const height = 4 + Math.random() * 10;
+                 ctx.fillRect(tx + i, ty + TEXTURE_SIZE - height, 1, height);
+                 if(Math.random()>0.5) {
+                    ctx.fillStyle = '#7eedf5';
+                    ctx.fillRect(tx + i, ty + TEXTURE_SIZE - height + 2, 1, 2);
+                    ctx.fillStyle = '#2fbdd4';
+                 }
+              }
+          }
+          else if (id === 49) { // Basalt Top (1, 6) -> 49
+              ctx.fillStyle = '#4d4d4d';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#363636';
+              ctx.fillRect(tx+2, ty+2, TEXTURE_SIZE-4, TEXTURE_SIZE-4);
+          }
+          else if (id === 50) { // Basalt Side (2, 6) -> 50
+              ctx.fillStyle = '#363636';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#4d4d4d';
+              for (let i = 0; i < TEXTURE_SIZE; i += 2) {
+                  ctx.fillRect(tx + i, ty, 1, TEXTURE_SIZE);
+              }
+          }
+          else if (id === 51) { // Blackstone (3, 6) -> 51
+              ctx.fillStyle = '#211c1d';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.7) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#141112' : '#332b2d';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 52) { // Lava (4, 6) -> 52
+              ctx.fillStyle = '#e65c00';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.8) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#ff8c00' : '#cc3300';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 53) { // End Stone (5, 6) -> 53
+              ctx.fillStyle = '#dbde9e';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.8) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#b8bb7d' : '#eaf0a6';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 54) { // Obsidian (6, 6) -> 54
+              ctx.fillStyle = '#14101c';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              for (let i = 0; i < TEXTURE_SIZE; i++) {
+                  for (let j = 0; j < TEXTURE_SIZE; j++) {
+                      if (Math.random() > 0.8) {
+                          ctx.fillStyle = Math.random() > 0.5 ? '#271f3b' : '#362854';
+                          ctx.fillRect(tx + i, ty + j, 1, 1);
+                      }
+                  }
+              }
+          }
+          else if (id === 55) { // End Crystal (7, 6) -> 55
+              ctx.fillStyle = 'rgba(0,0,0,0)';
+              ctx.clearRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeStyle = '#f5c9ff';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(tx+2, ty+2, TEXTURE_SIZE-4, TEXTURE_SIZE-4);
+              ctx.strokeRect(tx+5, ty+5, TEXTURE_SIZE-10, TEXTURE_SIZE-10);
+              ctx.fillStyle = '#ff7bfc';
+              ctx.fillRect(tx+7, ty+7, 2, 2);
+          }
+          else if (id === 56) { // Chorus Stem (0, 7) -> 56
+              ctx.fillStyle = '#8e628e';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeStyle = '#613b61';
+              ctx.strokeRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+          }
+          else if (id === 57) { // Chorus Flower (1, 7) -> 57
+              ctx.fillStyle = '#b38bb3';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.fillStyle = '#fcfcfc';
+              ctx.fillRect(tx+6, ty+6, 4, 4);
+              ctx.strokeStyle = '#613b61';
+              ctx.strokeRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+          }
+          else if (id === 58) { // Purpur Block (2, 7) -> 58
+              ctx.fillStyle = '#a173a1';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeStyle = '#855b85';
+              ctx.strokeRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeRect(tx+2, ty+2, TEXTURE_SIZE-4, TEXTURE_SIZE-4);
+          }
+          else if (id === 59) { // End Stone Bricks (3, 7) -> 59
+              ctx.fillStyle = '#dbde9e';
+              ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.strokeStyle = '#b8bb7d';
+              ctx.strokeRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+              ctx.beginPath(); ctx.moveTo(tx, ty+8); ctx.lineTo(tx+TEXTURE_SIZE, ty+8); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(tx+8, ty); ctx.lineTo(tx+8, ty+8); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(tx+4, ty+8); ctx.lineTo(tx+4, ty+TEXTURE_SIZE); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(tx+12, ty+8); ctx.lineTo(tx+12, ty+TEXTURE_SIZE); ctx.stroke();
+          }
+      }
       else if (id === 26) { // TNT top (col 2, row 3)
         // Tan/beige base
         ctx.fillStyle = '#d4a574';
@@ -641,9 +965,10 @@ export class WorldManager {
     this.onChunkBuilt = onChunkBuilt;
     this.onBlockBroken = onBlockBroken;
     this.chunkSize = 16;
-    this.chunkHeight = 64;
+    this.chunkHeight = 128;
 
     this.chunks = {};
+    this.activeDimension = 0;
     this.renderRadius = 6;
 
     // Load modifications from localStorage
@@ -809,6 +1134,7 @@ export class WorldManager {
     return `${cx},${cz}`;
   }
 
+
   getBlock(x, y, z) {
     if (y < 0) return BLOCK_INFO[BLOCKS.BEDROCK];
     if (y >= this.chunkHeight) return null;
@@ -820,19 +1146,32 @@ export class WorldManager {
 
     // Fall back to noise calculation if chunk isn't loaded on main thread yet
     if (!chunk || chunk.placeholder || !chunk.blocks) {
-      const info = getTerrainHeightAndWater(x, z);
-      const height = info.height;
-      const waterLevel = info.waterLevel;
-      const isPool = info.isPool;
-
       let type = BLOCKS.AIR;
-      if (y === 0) type = BLOCKS.BEDROCK;
-      else if (y < height - 4) type = BLOCKS.STONE;
-      else if (y < height) type = BLOCKS.DIRT;
-      else if (y === height) type = isPool ? BLOCKS.SAND : BLOCKS.GRASS;
-      else if (y > height && y <= waterLevel) type = BLOCKS.WATER;
 
-      return BLOCK_INFO[type];
+      if (this.activeDimension === 0) {
+        const info = getTerrainHeightAndWater(x, z);
+        const height = info.height;
+        const waterLevel = info.waterLevel;
+        const isPool = info.isPool;
+
+        if (y === 0) type = BLOCKS.BEDROCK;
+        else if (y < height - 4) type = BLOCKS.STONE;
+        else if (y < height) type = BLOCKS.DIRT;
+        else if (y === height) type = isPool ? BLOCKS.SAND : BLOCKS.GRASS;
+        else if (y > height && y <= waterLevel) type = BLOCKS.WATER;
+      } else if (this.activeDimension === 1) {
+        // Simple Nether placeholder
+        if (y === 0 || y === 63) type = BLOCKS.BEDROCK;
+        else if (y < 31) type = BLOCKS.LAVA;
+        else type = BLOCKS.NETHERRACK;
+      } else if (this.activeDimension === 2) {
+        // Simple End placeholder
+        const distSq = x*x + z*z;
+        if (distSq < 100*100) type = BLOCKS.END_STONE;
+        else type = BLOCKS.AIR;
+      }
+
+      return BLOCK_INFO[type] || BLOCK_INFO[BLOCKS.AIR];
     }
 
     const lx = ((x % this.chunkSize) + this.chunkSize) % this.chunkSize;

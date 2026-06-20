@@ -173,6 +173,17 @@ export class PhysicsEngine {
       targetSpeed *= 0.35;
     }
 
+    // Soul Sand slowness check
+    const currentBlockBelow = world.getBlock(Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z));
+    if (currentBlockBelow && currentBlockBelow.type === 27) { // BLOCKS.SOUL_SAND = 27
+       targetSpeed *= 0.5;
+    }
+
+    // Void true damage
+    if (world.activeDimension === 2 && this.position.y < 0) {
+        this.lastFallDamage = 1; // Hacky way to inject flat tick damage via existing system
+    }
+
     if (inputLength > 0 && !inCobweb) {
       const normForward = forwardInput / inputLength;
       const normSide = sideInput / inputLength;

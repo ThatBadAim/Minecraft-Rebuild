@@ -2,6 +2,7 @@ import { PhysicsEngine } from './physics.js';
 import { WorldManager, BLOCKS, BLOCK_INFO } from './world.js';
 import { gameAudio } from './audio.js';
 import { EntityManager } from './entities.js';
+import { noiseGen } from './noise.js';
 
 class GameController {
   constructor() {
@@ -1047,6 +1048,31 @@ class GameController {
       }
 
       // Toggle crafting menu
+      // Dimension Testing Hotkey (P)
+      if (e.code === 'KeyP') {
+        this.world.activeDimension = (this.world.activeDimension + 1) % 3;
+        console.log("Switching to dimension:", this.world.activeDimension);
+
+        // Reset world chunks
+        this.world.chunks = {};
+        for (const mesh of this.world.meshList) {
+          this.scene.remove(mesh);
+          if (mesh.geometry) mesh.geometry.dispose();
+        }
+        this.world.meshList = [];
+
+        // Notify worker to regenerate chunks with new dimension
+        this.world.worker.postMessage({
+          type: 'setDimension',
+          dimension: this.world.activeDimension
+        });
+
+        // Teleport to origin to ensure we land in the generated chunks (important for The End)
+        this.physics.position.set(0, 100, 0);
+        this.teleportToGround();
+        this.updateSkyForDimension();
+      }
+
       if (e.code === 'KeyC') {
         if (this.isCraftingOpen) {
           this.controls.lock();

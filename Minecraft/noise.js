@@ -80,6 +80,23 @@ class PerlinNoise {
                                                   this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1))));
   }
 
+
+  fbm3D(x, y, z, octaves = 4, persistence = 0.5, lacunarity = 2.0) {
+    let total = 0;
+    let frequency = 1.0;
+    let amplitude = 1.0;
+    let maxValue = 0;
+
+    for (let i = 0; i < octaves; i++) {
+      total += this.noise(x * frequency, y * frequency, z * frequency) * amplitude;
+      maxValue += amplitude;
+      amplitude *= persistence;
+      frequency *= lacunarity;
+    }
+
+    return (total / maxValue + 1) / 2; // Normalize to [0, 1]
+  }
+
   // Fractional Brownian Motion (FBm) for layered noise
   fbm2D(x, y, octaves = 4, persistence = 0.5, lacunarity = 2.0) {
     let total = 0;
