@@ -597,7 +597,7 @@ export class SelectWorldScreen extends Screen {
 
     // Footer Action Zone: Y = height - 64 to absolute bottom.
     // Top Button Row (Y = height - 52): Play Selected (150px) and Create New (150px)
-    const playBtnX = (width / 2) - 150 - 2;
+    const playBtnX = (width / 2) - 152;
     const createBtnX = (width / 2) + 2;
     const topRowY = height - 52;
 
@@ -620,8 +620,7 @@ export class SelectWorldScreen extends Screen {
     // Distributed evenly across 200px width approximately? No, the spec says "Three evenly distributed split utility buttons".
     // Let's center them with a 4px gap.
     const bottomRowY = height - 28;
-    const totalW = (64 * 3) + (4 * 2);
-    let currX = (width / 2) - (totalW / 2);
+    let currX = (width / 2) - 100;
 
     this.components.push(new Button(currX, bottomRowY, 64, 20, "Edit", () => {}));
     currX += 64 + 4;
@@ -634,7 +633,7 @@ export class SelectWorldScreen extends Screen {
 
   onMouseWheel(deltaY) {
     // Scroll the list
-    const maxScroll = Math.max(0, (this.worlds.length * 36) - (this.engine.height - 64 - 48));
+    const maxScroll = Math.max(0, (this.worlds.length * 40) - (this.engine.height - 64 - 48));
     this.scrollY += Math.sign(deltaY) * 15; // Scroll speed
     this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
   }
@@ -651,9 +650,9 @@ export class SelectWorldScreen extends Screen {
       if (px >= listX && px <= listX + listWidth) {
         // Calculate which item was clicked
         const listY = py - 48 + this.scrollY;
-        const itemHeight = 36;
+        const itemSpacing = 40;
 
-        const clickedIndex = Math.floor(listY / itemHeight);
+        const clickedIndex = Math.floor(listY / itemSpacing);
 
         if (clickedIndex >= 0 && clickedIndex < this.worlds.length) {
             this.selectedIndex = clickedIndex;
@@ -692,11 +691,12 @@ export class SelectWorldScreen extends Screen {
 
     // Draw List Items
     const itemHeight = 36;
+    const itemSpacing = 40;
     const listWidth = 220;
     const listX = (width / 2) - (listWidth / 2);
 
     for (let i = 0; i < this.worlds.length; i++) {
-        const itemY = listStartY + (i * itemHeight) - this.scrollY;
+        const itemY = listStartY + (i * itemSpacing) - this.scrollY;
 
         if (itemY + itemHeight < listStartY || itemY > listEndY) continue; // Culling
 
@@ -708,12 +708,12 @@ export class SelectWorldScreen extends Screen {
             ctx.fillRect(listX - 1, itemY - 1, listWidth + 2, itemHeight + 2);
         }
 
-        // Left slot: 32x32 Thumbnail
+        // Left slot: 32x32 Thumbnail (X=32 from listX)
         ctx.fillStyle = '#808080';
-        ctx.fillRect(listX, itemY + 2, 32, 32);
+        ctx.fillRect(listX + 32, itemY + 2, 32, 32);
 
         // Right slot: Text rows
-        const textX = listX + 32 + 4;
+        const textX = listX + 32 + 32 + 4;
         const world = this.worlds[i];
 
         ctx.font = '8px "Press Start 2P", monospace';
@@ -734,12 +734,12 @@ export class SelectWorldScreen extends Screen {
         ctx.font = '6px "Press Start 2P", monospace';
 
         ctx.fillStyle = '#242424';
-        ctx.fillText(bottomText, textX + 1, itemY + 16 + 1);
-        ctx.fillText(modeText, textX + 1, itemY + 26 + 1);
+        ctx.fillText(bottomText, textX + 1, itemY + 18 + 1);
+        ctx.fillText(modeText, textX + 1, itemY + 28 + 1);
 
         ctx.fillStyle = '#A0A0A0';
-        ctx.fillText(bottomText, textX, itemY + 16);
-        ctx.fillText(modeText, textX, itemY + 26);
+        ctx.fillText(bottomText, textX, itemY + 18);
+        ctx.fillText(modeText, textX, itemY + 28);
     }
 
     ctx.restore();
@@ -764,6 +764,17 @@ export class SelectWorldScreen extends Screen {
 
     // Render Buttons and Labels
     super.render(ctx, dt);
+
+    // DEBUG: Draw bounding boxes for footer buttons to verify no overlap
+    /*
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 1;
+    for (let c of this.components) {
+      if (c instanceof Button && c.y >= height - 64) {
+        ctx.strokeRect(c.x, c.y, c.width, c.height);
+      }
+    }
+    */
   }
 
   drawTiledBackground(ctx, x, y, w, h, opacity) {

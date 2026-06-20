@@ -631,3 +631,102 @@ export class EntityManager {
     }
   }
 }
+
+// 1.6 Mobs
+class Horse extends PassiveMob {
+  constructor(x, y, z) { super(EntityTypes.HORSE, x, y, z, 0.8, 1.6); this.health = 20; this.tamed = false; }
+  onInteract(item) {
+      if (item === 'Wheat' || item === 'Apple') {
+          // Taming logic mock
+          this.tamed = true;
+          return true; // Item consumed
+      }
+      return false;
+  }
+}
+class Donkey extends PassiveMob {
+  constructor(x, y, z) { super(EntityTypes.DONKEY, x, y, z, 0.8, 1.6); this.health = 15; this.tamed = false; }
+}
+class Wolf extends NeutralMob {
+  constructor(x, y, z) { super(EntityTypes.WOLF, x, y, z, 0.6, 0.8); this.health = 8; this.hostile = false; this.tamed = false; }
+  takeDamage(amount, source) {
+      super.takeDamage(amount, source);
+      if (source && source.isPlayer) {
+          this.hostile = true;
+          // In a full implementation, we'd alert nearby wolves here
+      }
+  }
+}
+class Silverfish extends HostileMob {
+  constructor(x, y, z) { super(EntityTypes.SILVERFISH, x, y, z, 0.4, 0.3); this.health = 8; this.damage = 1; }
+  takeDamage(amount, source) {
+      super.takeDamage(amount, source);
+      if (this.health > 0) {
+          // Alert call to Monster Egg blocks within 16-block radius
+          // Handled by WorldManager orchestrator listening for this event
+          if (this.manager) this.manager.triggerSilverfishSwarm(this.x, this.y, this.z);
+      }
+  }
+}
+class Slime extends HostileMob {
+  constructor(x, y, z, size = 3) { super(EntityTypes.SLIME, x, y, z, size * 0.5, size * 0.5); this.size = size; this.health = size * size; }
+  static canSpawn(worldTime) {
+      // Slimes spawn dynamically based on Moon Phase (Mocked)
+      const days = Math.floor(worldTime / 24000);
+      const moonPhase = days % 8;
+      if (moonPhase === 4) return false; // New Moon -> Zero spawn
+      if (moonPhase === 0) return Math.random() < 0.5; // Full Moon -> Peak spawn
+      return Math.random() < 0.1; // Other phases
+  }
+  die() {
+      super.die();
+      if (this.size > 1 && this.manager) {
+          const newSize = this.size === 3 ? 2 : 1;
+          const count = 2 + Math.floor(Math.random() * 3);
+          for(let i=0; i<count; i++) {
+              const slime = this.manager.createEntity(EntityTypes.SLIME, this.x + (Math.random()-0.5), this.y, this.z + (Math.random()-0.5));
+              if (slime) {
+                  slime.size = newSize;
+                  slime.health = newSize * newSize;
+                  if(newSize === 1) slime.damage = 0; // Tiny slimes deal 0 damage
+              }
+          }
+      }
+  }
+}
+class Ocelot extends PassiveMob {
+  constructor(x, y, z) { super(EntityTypes.OCELOT, x, y, z, 0.6, 0.7); this.health = 10; this.skittish = true; }
+  update(dt) {
+      super.update(dt);
+      if (this.skittish && this.manager && this.manager.player) {
+          const dx = this.manager.player.x - this.x;
+          const dz = this.manager.player.z - this.z;
+          const distSq = dx*dx + dz*dz;
+          const v = this.manager.player.velocity;
+          const speed = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+          if (distSq < 16 * 16 && speed > 0.1) {
+             // Flee
+             this.velocity.x = -dx * 0.1;
+             this.velocity.z = -dz * 0.1;
+          }
+      }
+  }
+}
+class Cat extends PassiveMob {
+  constructor(x, y, z) { super(EntityTypes.CAT, x, y, z, 0.6, 0.7); this.health = 10; }
+}
+class Mooshroom extends PassiveMob {
+  constructor(x, y, z) { super(EntityTypes.MOOSHROOM, x, y, z, 0.9, 1.4); this.health = 10; }
+  onInteract(item) {
+      if (item === 'Bowl') {
+          // Yield Mushroom Stew
+          return true;
+      }
+      if (item === 'Shears') {
+          // Drop 5 Red Mushrooms and revert to Cow
+          // Handled by manager
+          return true;
+      }
+      return false;
+  }
+}

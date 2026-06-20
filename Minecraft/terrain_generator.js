@@ -1,4 +1,6 @@
 
+import { BiomePipeline, BIOMES } from './noise.js';
+
 export class TerrainGenerator {
   constructor(seed) {
     this.seed = seed;
@@ -20,11 +22,61 @@ export class TerrainGenerator {
     return a + t * (b - a);
   }
 
-  getDensity(worldX, worldY, worldZ) {
-    // Base 3D Noise (simulating overhangs and terrain shape)
-    const base = this.noiseGen.fbm3D(worldX * 0.01, worldY * 0.01, worldZ * 0.01, 4, 0.5, 2.0);
-    // Vertical gradient to force solid ground below and empty sky above
-    const heightGradient = (64.0 - worldY) / 32.0;
+  getDensity(worldX, worldY, worldZ, biome) {
+    // Biome-specific height maps and density adjustments
+    let baseHeight = 64.0;
+    let heightVariation = 32.0;
+    let frequency = 0.01;
+    let amplitude = 1.0;
+
+    // 1.6 Biome Terrain Signatures
+    switch (biome) {
+        case BIOMES.PLAINS:
+            baseHeight = 64.0;
+            heightVariation = 8.0;
+            frequency = 0.005; // Low frequency, rolling hills
+            break;
+        case BIOMES.FOREST:
+            baseHeight = 64.0;
+            heightVariation = 16.0;
+            frequency = 0.01; // Medium frequency
+            break;
+        case BIOMES.DESERT:
+            baseHeight = 64.0;
+            heightVariation = 4.0;
+            frequency = 0.008; // Flat
+            break;
+        case BIOMES.EXTREME_HILLS:
+            baseHeight = 80.0;
+            heightVariation = 64.0;
+            frequency = 0.02; // High frequency, high amplitude, jagged peaks
+            amplitude = 1.5;
+            break;
+        case BIOMES.SWAMPLAND:
+            baseHeight = 61.0; // Slightly below water level (62) to create shallow pools
+            heightVariation = 2.0;
+            frequency = 0.02;
+            break;
+        case BIOMES.JUNGLE:
+            baseHeight = 68.0;
+            heightVariation = 24.0;
+            frequency = 0.03; // Chaotic micro-topography
+            amplitude = 1.2;
+            break;
+        case BIOMES.TAIGA:
+            baseHeight = 66.0;
+            heightVariation = 16.0;
+            frequency = 0.01;
+            break;
+        case BIOMES.MUSHROOM_ISLAND:
+            baseHeight = 66.0;
+            heightVariation = 10.0;
+            frequency = 0.01;
+            break;
+    }
+
+    const base = this.noiseGen.fbm3D(worldX * frequency, worldY * frequency, worldZ * frequency, 4, 0.5, 2.0) * amplitude;
+    const heightGradient = (baseHeight - worldY) / heightVariation;
     return base + heightGradient;
   }
 
@@ -40,7 +92,8 @@ export class TerrainGenerator {
         const worldZ = cz * this.chunkSize + z * this.hStep;
         for (let y = 0; y < this.vRes; y++) {
           const worldY = y * this.vStep;
-          densityMap[x + z * this.hRes + y * this.hRes * this.hRes] = this.getDensity(worldX, worldY, worldZ);
+                    const biome = this.biomePipeline.getBiomeAt(worldX, worldZ);
+          densityMap[x + z * this.hRes + y * this.hRes * this.hRes] = this.getDensity(worldX, worldY, worldZ, biome);
         }
       }
     }
@@ -108,6 +161,7 @@ export class TerrainGenerator {
     // 3. Surface Dressing & Carving
     this.dressSurface(cx, cz, blocks, biomes);
     this.carveCaves(cx, cz, blocks);
+    this.decorateChunk(cx, cz, blocks, biomes);
 
     return blocks;
   }
@@ -121,9 +175,22 @@ export class TerrainGenerator {
         let topBlock = 1; // GRASS
         let fillerBlock = 2; // DIRT
 
-        if (biome === 2) { // Desert
+        if (biome === BIOMES.DESERT) {
           topBlock = 6; // SAND
-          fillerBlock = 6;
+          fillerBlock = 6; // SAND
+        } else if (biome === BIOMES.MUSHROOM_ISLAND) {
+          topBlock = 29; // MYCELIUM (assuming block ID 29, will need to add to world.js)
+          fillerBlock = 2; // DIRT
+        } else if (biome === BIOMES.TAIGA) {
+          topBlock = 1; // GRASS
+          fillerBlock = 2; // DIRT
+          // Snow layer will be added as decoration
+        } else if (biome === BIOMES.EXTREME_HILLS) {
+           // Extreme hills often expose stone
+           if (this.noiseGen.fbm2D(cx * 16 + x, cz * 16 + z, 2, 0.5, 2.0) > 0.4) {
+               topBlock = 3; // STONE
+               fillerBlock = 3; // STONE
+           }
         }
 
         for (let y = 127; y >= 0; y--) {
@@ -140,9 +207,13 @@ export class TerrainGenerator {
               } else {
                 blocks[index] = fillerBlock;
               }
-            } else if (depth < 3) {
+            } else if (depth < 4) {
               depth++;
-              blocks[index] = fillerBlock;
+              if (biome === BIOMES.DESERT && depth >= 1 && depth <= 3) {
+                  blocks[index] = 30; // SANDSTONE
+              } else {
+                  blocks[index] = fillerBlock;
+              }
             }
           }
         }
@@ -224,12 +295,151 @@ export class TerrainGenerator {
     // Only execute if chunk and south/east neighbors are generated
     // Handled by WorldManager orchestrator. Offset by +8 for decoration.
 
-    // Example tree population offset by +8
     const prng = new XorShift128(this.seed + cx * 9187 + cz * 4581);
-    if (prng.next() < 0.5) {
-      const x = cx * 16 + 8 + prng.nextInt(16);
-      const z = cz * 16 + 8 + prng.nextInt(16);
-      // find ground...
+
+    // Evaluate biome for the center of the chunk
+    const centerBiome = this.biomePipeline.getBiomeAt(cx * 16 + 8, cz * 16 + 8);
+
+    // Spawn passive mobs based on 1.6 rules
+    // Spawn rate: 10% chance per chunk
+    if (prng.next() < 0.1) {
+        const x = cx * 16 + prng.nextInt(16);
+        const z = cz * 16 + prng.nextInt(16);
+        let y = 127;
+        // Find ground...
+        // ... (mocked for now, assumes y is passed correctly to entity creation)
+
+        let mobType = null;
+        let count = 1;
+
+        switch (centerBiome) {
+            case BIOMES.PLAINS:
+                if (prng.next() < 0.2) { mobType = 8; /* HORSE */ count = prng.nextInt(4) + 2; }
+                else if (prng.next() < 0.1) { mobType = 9; /* DONKEY */ count = prng.nextInt(2) + 1; }
+                else {
+                    const r = prng.next();
+                    if (r < 0.3) mobType = 3; /* COW */
+                    else if (r < 0.6) mobType = 1; /* PIG */
+                    else mobType = 2; /* SHEEP */
+                    count = prng.nextInt(4) + 2;
+                }
+                break;
+            case BIOMES.FOREST:
+            case BIOMES.TAIGA:
+                if (prng.next() < 0.1) { mobType = 10; /* WOLF */ count = 4; } // Pack of 4
+                break;
+            case BIOMES.JUNGLE:
+                if (prng.next() < 0.3) { mobType = 13; /* OCELOT */ count = prng.nextInt(2) + 1; }
+                break;
+            case BIOMES.MUSHROOM_ISLAND:
+                mobType = 15; /* MOOSHROOM */
+                count = prng.nextInt(4) + 2;
+                break;
+            // Desert/Extreme Hills/Swampland have no specific passive spawns or different logic handled elsewhere
+        }
+
+        // Pass entity data to main thread...
     }
+  }
+
+  decorateChunk(cx, cz, blocks, biomes) {
+      const prng = new XorShift128(this.seed + cx * 9187 + cz * 4581);
+      const centerBiome = biomes[8 + 8 * 16];
+
+      const getGroundY = (x, z) => {
+          for(let y=127; y>=0; y--) {
+              if (blocks[x + z * 16 + y * 256] !== 0 && blocks[x + z * 16 + y * 256] !== 15) return y;
+          }
+          return -1;
+      };
+
+      if (centerBiome === BIOMES.FOREST || centerBiome === BIOMES.PLAINS) {
+          const numTrees = centerBiome === BIOMES.FOREST ? 10 : 1;
+          for(let i=0; i<numTrees; i++) {
+              if(prng.next() < 0.8) {
+                  const tx = prng.nextInt(12) + 2;
+                  const tz = prng.nextInt(12) + 2;
+                  const ty = getGroundY(tx, tz);
+                  if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) { // Grass
+                      this.generateTree(tx, ty, tz, blocks, 4, 5); // Oak
+                  }
+              }
+          }
+      } else if (centerBiome === BIOMES.TAIGA) {
+          for(let i=0; i<8; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 11, 12); // Pine
+              }
+          }
+          // Add snow layer
+          for(let x=0; x<16; x++) {
+              for(let z=0; z<16; z++) {
+                  const ty = getGroundY(x, z);
+                  if (ty > 0 && ty < 127 && blocks[x + z*16 + ty*256] !== 15) {
+                      blocks[x + z*16 + (ty+1)*256] = 31; // SNOW_LAYER
+                  }
+              }
+          }
+      } else if (centerBiome === BIOMES.DESERT) {
+          for(let i=0; i<2; i++) {
+              if(prng.next() < 0.5) {
+                  const tx = prng.nextInt(16);
+                  const tz = prng.nextInt(16);
+                  const ty = getGroundY(tx, tz);
+                  if (ty > 0 && ty < 125 && blocks[tx + tz*16 + ty*256] === 6) { // Sand
+                      blocks[tx + tz*16 + (ty+1)*256] = 34; // CACTUS
+                      blocks[tx + tz*16 + (ty+2)*256] = 34;
+                      blocks[tx + tz*16 + (ty+3)*256] = 34;
+                  }
+              }
+          }
+      } else if (centerBiome === BIOMES.MUSHROOM_ISLAND) {
+          for(let i=0; i<2; i++) {
+              if (prng.next() < 0.3) {
+                  const tx = prng.nextInt(12) + 2;
+                  const tz = prng.nextInt(12) + 2;
+                  const ty = getGroundY(tx, tz);
+                  if (ty > 0 && blocks[tx + tz*16 + ty*256] === 29) { // Mycelium
+                      this.generateTree(tx, ty, tz, blocks, 19, 19); // Meat block placeholder for giant mushroom stem/cap
+                  }
+              }
+          }
+      } else if (centerBiome === BIOMES.SWAMPLAND) {
+          for(let i=0; i<5; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 4, 5); // Oak
+              }
+          }
+      }
+  }
+
+  generateTree(x, y, z, blocks, logType, leafType) {
+      const height = 4 + Math.floor(Math.random() * 3);
+      for(let iy=0; iy<height; iy++) {
+          if (y + 1 + iy < 128) blocks[x + z*16 + (y+1+iy)*256] = logType;
+      }
+      for(let ix=-2; ix<=2; ix++) {
+          for(let iz=-2; iz<=2; iz++) {
+              for(let iy=height-2; iy<=height+1; iy++) {
+                  if (Math.abs(ix) === 2 && Math.abs(iz) === 2 && (iy === height || iy === height+1)) continue;
+                  if (ix === 0 && iz === 0 && iy < height) continue;
+
+                  const nx = x + ix;
+                  const nz = z + iz;
+                  const ny = y + 1 + iy;
+                  if (nx >= 0 && nx < 16 && nz >= 0 && nz < 16 && ny < 128) {
+                      if (blocks[nx + nz*16 + ny*256] === 0) {
+                          blocks[nx + nz*16 + ny*256] = leafType;
+                      }
+                  }
+              }
+          }
+      }
   }
 }
