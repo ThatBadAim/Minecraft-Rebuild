@@ -970,7 +970,7 @@ class GameController {
             }
           }
 
-          // F Key: Instantly swap it into the player's Off-hand slot.
+          // F Key: Hovering over an item and pressing F instantly swaps it into the player's Off-hand slot.
           if (e.code === 'KeyF') {
             if (type !== 'offhand' && type !== 'craft-out') {
               const offStack = this.offhandSlot;
@@ -982,7 +982,7 @@ class GameController {
             }
           }
 
-          // Q Key / Ctrl + Q Key: Drop single item / Drop entire stack.
+          // Q Key / Ctrl + Q Key: Drops a single item from the hovered stack onto the ground. Ctrl+Q drops the entire hovered stack.
           if (e.code === 'KeyQ') {
             if (type === 'craft-out') return; // Prevent exploits and data loss on craft output
             const dropAll = e.ctrlKey;
@@ -1005,7 +1005,7 @@ class GameController {
         }
       }
 
-      // Drop cursor items if cursor held outside UI
+      // Note: Pressing Q or Ctrl+Q while holding items on the cursor outside the UI boundaries drops the cursor's held items.
       if (e.code === 'KeyQ' && this.cursorStack && (this.hoveredSlotIndex === null || (!this.isInventoryOpen && !this.isCraftingOpen))) {
         const dropAll = e.ctrlKey;
         if (dropAll) {
@@ -1462,7 +1462,17 @@ class GameController {
 
     if (type === 'craft-out') {
       // Take output to inventory
-      if (this.addToInventory(slotStack.type, slotStack.count)) {
+      // From Container: Fills the player Hotbar first (left-to-right), then the Main Inventory (top-left to bottom-right).
+
+      // Check if the entire stack can fit by simulating the add
+      let testRemainder = this.simulateShiftFillSlots(slotStack, 27, 35);
+      if (testRemainder > 0) testRemainder = this.simulateShiftFillSlots({type: slotStack.type, count: testRemainder}, 0, 26);
+
+      // Only perform the move if the entire stack fits
+      if (testRemainder === 0) {
+        let remainder = this.shiftFillSlots(slotStack, 27, 35); // Hotbar
+        if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
+
         this.collectCraftingOutput();
         this.buildInventoryGridUI();
         this.buildHotbarUI();
@@ -1496,7 +1506,7 @@ class GameController {
       }
       moved = true;
     } else if (type === 'main') {
-      // 2. From Main Inventory: Fills open container first. If none, fills Hotbar.
+      // 2. From Main Inventory: Fills open container first. If no container is open, fills the first available slot in the Hotbar.
       let remainder = slotStack.count;
       if (isContainerOpen) {
         for (let i = 0; i < 4; i++) {
@@ -1519,7 +1529,7 @@ class GameController {
       }
       moved = true;
     } else if (type === 'hotbar') {
-      // 3. From Hotbar: Fills open container first. If none, fills Main Inventory.
+      // 3. From Hotbar: Fills open container first. If no container is open, fills the first available slot in the Main Inventory (top-to-bottom).
       let remainder = slotStack.count;
       if (isContainerOpen) {
         for (let i = 0; i < 4; i++) {
@@ -1584,6 +1594,33 @@ class GameController {
     return remainder;
   }
 
+  simulateShiftFillSlots(stack, startIndex, endIndex) {
+    let remainder = stack.count;
+    const max = BLOCK_INFO[stack.type].maxStack || 64;
+
+    // Fill existing
+    for (let i = startIndex; i <= endIndex; i++) {
+      const slot = this.inventorySlots[i];
+      if (slot && slot.type === stack.type && slot.count < max) {
+        const space = max - slot.count;
+        const add = Math.min(space, remainder);
+        remainder -= add;
+        if (remainder <= 0) break;
+      }
+    }
+    // Fill empty
+    if (remainder > 0) {
+      for (let i = startIndex; i <= endIndex; i++) {
+        if (!this.inventorySlots[i]) {
+          const add = Math.min(max, remainder);
+          remainder -= add;
+          if (remainder <= 0) break;
+        }
+      }
+    }
+    return remainder;
+  }
+
   handleSlotMousedown(e) {
     if (this.hoveredSlotType === null || this.hoveredSlotIndex === null) return;
 
@@ -1615,11 +1652,14 @@ class GameController {
         } else {
           // Double Left-Click (With held item): Instantly pull all matching items from the open inventory UI into the cursor stack until it reaches its maximum stack limit.
           if (this.lastClickTime && (Date.now() - this.lastClickTime < 250) && this.lastClickSlot === `${type}-${index}`) {
-             this.collectAllMatchingToCursor();
-             this.updateCursorStackUI();
-             this.buildInventoryGridUI();
-             this.buildHotbarUI();
-             return;
+            // Double Left-Click (With held item): Instantly pull all matching items from the open inventory UI into the cursor stack until it reaches its maximum stack limit.
+            if (this.cursorStack) {
+               this.collectAllMatchingToCursor();
+               this.updateCursorStackUI();
+               this.buildInventoryGridUI();
+               this.buildHotbarUI();
+               return;
+            }
           }
 
           if (type === 'craft-out') {
@@ -1676,7 +1716,7 @@ class GameController {
             this.cursorStack = { type: slotStack.type, count: slotStack.count };
             this.collectCraftingOutput();
           } else {
-            // Right-Click (On item): Pick up exactly half the stack (round up).
+            // Right-Click (On item): Pick up exactly half the stack (round up if the stack is an odd number).
             const take = Math.ceil(slotStack.count / 2);
             this.cursorStack = { type: slotStack.type, count: take };
             slotStack.count -= take;
@@ -1739,6 +1779,7 @@ class GameController {
     const max = BLOCK_INFO[this.cursorStack.type].maxStack || 64;
 
     if (this.isDraggingRight) {
+      // Right-Click + Drag: Deposit exactly one item from the held cursor stack into every UI slot the mouse hovers over.
       if (this.cursorStack.count > 0) {
         if (!slotStack) {
           this.setSlotStack(type, index, { type: this.cursorStack.type, count: 1 });
@@ -1753,6 +1794,7 @@ class GameController {
         if (this.cursorStack.count <= 0) this.cursorStack = null;
       }
     } else if (this.isDraggingLeft) {
+      // Left-Click + Drag: Evenly divide and distribute the currently held cursor stack across all UI slots the mouse hovers over.
       if (!this.draggedSlots.has(key)) {
          this.draggedSlots.set(key, slotStack ? slotStack.count : 0);
       }
