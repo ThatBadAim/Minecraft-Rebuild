@@ -259,3 +259,103 @@ export function getTerrainHeight(worldX, worldZ) {
 }
 
 export default PerlinNoise;
+
+
+export const BIOMES = {
+  PLAINS: 0,
+  FOREST: 1,
+  DESERT: 2,
+  EXTREME_HILLS: 3,
+  SWAMPLAND: 4,
+  JUNGLE: 5,
+  TAIGA: 6,
+  MUSHROOM_ISLAND: 7
+};
+
+export class BiomePipeline {
+  constructor(seed) {
+    this.seed = seed;
+    // We use two separate noise generators for temperature and humidity to ensure chaotic, 1.6-style generation
+    this.tempNoise = new PerlinNoise(seed + 1234);
+    this.humidNoise = new PerlinNoise(seed + 5678);
+  }
+
+  getBiomeAt(worldX, worldZ) {
+    // Large-scale noise evaluation for biomes
+    const scale = 0.005;
+
+    // Normalize noise from [-1, 1] to [0, 1]
+    let temp = (this.tempNoise.fbm2D(worldX * scale, worldZ * scale, 3, 0.5, 2.0) + 1.0) * 0.5;
+    let humid = (this.humidNoise.fbm2D(worldX * scale, worldZ * scale, 3, 0.5, 2.0) + 1.0) * 0.5;
+
+    // Clamp values
+    temp = Math.max(0, Math.min(1, temp));
+    humid = Math.max(0, Math.min(1, humid));
+
+    // Mushroom Island override (Rare, isolated)
+    // Check a much lower frequency noise for rare mushroom islands
+    let rareIsland = (this.tempNoise.fbm2D(worldX * 0.001, worldZ * 0.001, 1, 0.5, 2.0) + 1.0) * 0.5;
+    // Only spawn in ocean-like temperature/humidity and if rareIsland > 0.95
+    if (rareIsland > 0.98 && temp < 0.6 && humid > 0.6) {
+        return BIOMES.MUSHROOM_ISLAND;
+    }
+
+    // 2D Biome Lookup Matrix (Temperature Y, Humidity X)
+    if (temp < 0.3) {
+      // Cold
+      if (humid < 0.5) return BIOMES.TAIGA;
+      return BIOMES.TAIGA; // 1.6 had less cold variety, taiga covers mostly everything cold
+    } else if (temp < 0.7) {
+      // Temperate
+      if (humid < 0.3) return BIOMES.PLAINS;
+      if (humid < 0.6) return BIOMES.FOREST;
+      if (humid < 0.8) return BIOMES.SWAMPLAND;
+      return BIOMES.EXTREME_HILLS;
+    } else {
+      // Hot
+      if (humid < 0.4) return BIOMES.DESERT;
+      if (humid < 0.7) return BIOMES.PLAINS;
+      return BIOMES.JUNGLE;
+    }
+  }
+
+  getBiomes(cx, cz) {
+    const biomes = new Uint8Array(16 * 16);
+    for (let x = 0; x < 16; x++) {
+      for (let z = 0; z < 16; z++) {
+        biomes[x + z * 16] = this.getBiomeAt(cx * 16 + x, cz * 16 + z);
+      }
+    }
+    return biomes;
+  }
+}
+
+
+// 1.6 Biome Color Matrix (Temperature X, Humidity Y) -> Used for grass, leaves, and water
+// Grass/Foliage base: 0x48B518
+export class BiomeColorProvider {
+  static getGrassColor(temp, humid) {
+    // Very simplified tinting math for 1.6 style
+    temp = Math.max(0, Math.min(1, temp));
+    humid = Math.max(0, Math.min(1, humid));
+    humid *= temp; // Humidity affects less in cold
+
+    const r = Math.floor(this.lerp(temp, 120, 190) * (1 - humid * 0.5));
+    const g = Math.floor(this.lerp(humid, 180, 255));
+    const b = Math.floor(this.lerp(temp, 100, 60));
+
+    // Specific overrides
+    if (temp < 0.3) return 0x86B783; // Taiga
+    if (temp > 0.7 && humid > 0.6) return 0x537B09; // Jungle
+    if (temp > 0.7 && humid < 0.4) return 0xBFB755; // Desert
+
+    return (r << 16) | (g << 8) | b;
+  }
+
+  static getSwampGrass() { return 0x4C763C; } // Dark swamp-green
+  static getSwampWater() { return 0x4C482A; } // Murky brown-green
+
+  static lerp(t, a, b) {
+    return a + t * (b - a);
+  }
+}

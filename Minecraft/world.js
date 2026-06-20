@@ -30,7 +30,13 @@ export const BLOCKS = {
   SLIME: 25,
   COBWEB: 26,
   SOUL_SAND: 27,
-  MAGMA_BLOCK: 28
+  MAGMA_BLOCK: 28,
+  MYCELIUM: 29,
+  SANDSTONE: 30,
+  SNOW_LAYER: 31,
+  EMERALD_ORE: 32,
+  MONSTER_EGG: 33,
+  CACTUS: 34
 };
 
 // Metadata for blocks
