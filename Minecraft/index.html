@@ -32,6 +32,29 @@
     </defs>
   </svg>
 
+
+  <!-- Title Screen Overlay -->
+  <div id="screen-title" class="overlay" style="background: url('panorama.png') center center; background-size: cover;">
+    <div id="main-logo" class="loading-logo"></div>
+
+    <div id="pixel-perfect-text">Pixel Perfect!</div>
+    <div id="button-stack">
+        <button class="btn-mc wide" onclick="document.getElementById('screen-title').classList.add('hidden')">Singleplayer</button>
+        <button class="btn-mc wide">Multiplayer</button>
+        <button class="btn-mc wide">Minecraft Realms</button>
+        <div class="split-row">
+            <button class="btn-mc btn-options" onclick="document.getElementById('screen-menu').classList.remove('hidden')">Options...</button>
+            <button class="btn-mc btn-quit">Quit Game</button>
+        </div>
+    </div>
+
+    <button id="btn-language" class="btn-mc utility-btn">L</button>
+    <button id="btn-accessibility" class="btn-mc utility-btn">A</button>
+
+    <div id="version-string">Minecraft 1.20</div>
+    <div id="copyright-string">Copyright Mojang AB. Do not distribute!</div>
+  </div>
+
   <!-- Loading Screen -->
   <div id="loading-screen">
     <div class="loading-content">
@@ -72,7 +95,7 @@
   </div>
 
   <!-- Menu / Play Screen Overlay -->
-  <div id="screen-menu" class="overlay options-overlay">
+  <div id="screen-menu" class="overlay options-overlay hidden">
     <div class="mc-panel options-panel">
       <h2>Options</h2>
 

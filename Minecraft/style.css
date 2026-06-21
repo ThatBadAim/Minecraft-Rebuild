@@ -1005,3 +1005,154 @@ body, html {
   text-shadow: 2px 2px 0 #3f3f3f;
   margin-bottom: -40px; /* pull closer to bar */
 }
+
+#version-string {
+    position: absolute;
+    left: 2px;
+    bottom: 10px;
+    color: white;
+    font-family: var(--font-retro);
+    font-size: 10px;
+    z-index: 100;
+    pointer-events: none;
+    text-shadow: 1px 1px 0px #000;
+}
+
+#copyright-string {
+    position: absolute;
+    right: 2px;
+    bottom: 10px;
+    color: white;
+    font-family: var(--font-retro);
+    font-size: 10px;
+    z-index: 100;
+    pointer-events: none;
+    text-shadow: 1px 1px 0px #000;
+    white-space: nowrap;
+    max-width: calc(100vw - 200px); /* collision check fallback via CSS */
+    overflow: hidden;
+}
+
+/* B. Fix Component Centering (Axis Calculation) */
+/* Logo Centering: X = (width / 2) - 137 */
+#main-logo {
+    position: absolute;
+    left: calc(50vw - 137px);
+    top: 60px;
+    width: 274px;
+    text-align: center;
+}
+
+/* Button Stack Centering: X = (width / 2) - 100 */
+#button-stack {
+    position: absolute;
+    left: calc(50vw - 100px);
+    top: 200px;
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Split Row Adjustment */
+.split-row {
+    position: relative;
+    width: 200px;
+    height: 32px;
+}
+
+.btn-options {
+    position: absolute;
+    left: 0;
+    width: 98px;
+}
+
+.btn-quit {
+    position: absolute;
+    left: 102px; /* 100 + 2 */
+    width: 98px;
+}
+
+/* C. Resolve Utility Button Z-Index/Placement */
+/* 'L' and 'A' square buttons (20x20) moved to absolute bottom-left area */
+.utility-btn {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    bottom: 30px; /* Above the version string */
+    z-index: 100;
+}
+
+#btn-language {
+    left: 2px;
+}
+
+#btn-accessibility {
+    left: 26px; /* 2 + 20 + 4 padding */
+}
+
+#button-stack .btn-mc.wide {
+    width: 200px;
+    box-sizing: border-box;
+}
+
+#button-stack .split-row .btn-options {
+    position: absolute;
+    left: 0; /* relative to split-row width 200px */
+    width: 98px;
+    box-sizing: border-box;
+    padding: 0;
+}
+
+#button-stack .split-row .btn-quit {
+    position: absolute;
+    left: 102px; /* relative to split-row width 200px */
+    width: 98px;
+    box-sizing: border-box;
+    padding: 0;
+}
+
+/* Also hide the in-game HUD elements when title is active */
+#screen-title {
+    z-index: 9999; /* ensure it's on top of everything including HUD */
+    background-color: #557799; /* Fallback if panorama missing */
+}
+
+/* Add the "Pixel Perfect!" text */
+#pixel-perfect-text {
+    position: absolute;
+    left: calc(50vw + 60px);
+    top: 140px;
+    color: yellow;
+    font-family: var(--font-retro);
+    font-size: 24px;
+    text-shadow: 2px 2px 0px #000;
+    transform: rotate(-20deg);
+    z-index: 100;
+}
+
+#button-stack .btn-mc.wide {
+    width: 200px;
+    height: 32px;
+    padding: 0;
+    line-height: 28px;
+    font-size: 10px;
+}
+
+#button-stack .split-row .btn-options,
+#button-stack .split-row .btn-quit {
+    width: 98px;
+    height: 32px;
+    padding: 0;
+    line-height: 28px;
+    font-size: 10px;
+}
+
+.utility-btn {
+    width: 20px !important;
+    height: 20px !important;
+    padding: 0 !important;
+    line-height: 16px !important;
+    font-size: 10px !important;
+    text-align: center;
+}
