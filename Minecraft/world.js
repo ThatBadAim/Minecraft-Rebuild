@@ -82,7 +82,7 @@ for (const key in BLOCK_INFO) {
   const unstackables = [BLOCKS.STONE_PICKAXE, BLOCKS.WATER];
 
   // Limited Stacking (Max 16): Specific utility/throwable items (e.g., Ender Pearls, Eggs, Snowballs, Signs).
-  const limitedStackables = [BLOCKS.MEAT, BLOCKS.WOOL, BLOCKS.SLIME, BLOCKS.COBWEB, BLOCKS.TNT, BLOCKS.ICE, BLOCKS.STICK, BLOCKS.TORCH];
+  const limitedStackables = [BLOCKS.MEAT, BLOCKS.WOOL, BLOCKS.SLIME, BLOCKS.COBWEB, BLOCKS.TNT, BLOCKS.ICE, BLOCKS.STICK, BLOCKS.TORCH, BLOCKS.MONSTER_EGG];
 
   if (unstackables.includes(type)) {
     BLOCK_INFO[key].maxStack = 1;
