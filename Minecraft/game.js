@@ -1391,18 +1391,12 @@ class GameController {
     if (!slotStack) return;
 
     if (type === 'craft-out') {
-      // Take output to inventory
-      // From Container: Fills the player Hotbar first (left-to-right), then the Main Inventory (top-left to bottom-right).
-
-      // Check if the entire stack can fit by simulating the add
       let testRemainder = this.simulateShiftFillSlots(slotStack, 27, 35);
       if (testRemainder > 0) testRemainder = this.simulateShiftFillSlots({type: slotStack.type, count: testRemainder}, 0, 26);
 
-      // Only perform the move if the entire stack fits
       if (testRemainder === 0) {
-        let remainder = this.shiftFillSlots(slotStack, 27, 35); // Hotbar
-        if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
-
+        let remainder = this.shiftFillSlots(slotStack, 27, 35);
+        if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26);
         this.collectCraftingOutput();
         this.buildInventoryGridUI();
         this.buildHotbarUI();
@@ -1413,9 +1407,7 @@ class GameController {
     let moved = false;
     const isContainerOpen = this.isCraftingOpen;
 
-    // Shift-Click armor/shields logic (instantly equip). Map tools/equippables to offhand as the designated slot in this clone.
-    // Includes unstackable items (maxStack 1)
-    const isEquippable = BLOCK_INFO[slotStack.type].maxStack === 1;
+    const isEquippable = BLOCK_INFO[slotStack.type] && BLOCK_INFO[slotStack.type].maxStack === 1;
     if (type !== 'offhand' && isEquippable) {
       const offStack = this.offhandSlot;
       this.offhandSlot = { type: slotStack.type, count: slotStack.count };
@@ -1426,10 +1418,8 @@ class GameController {
     }
 
     if (type === 'craft-in') {
-      // 1. From Container: Fills player Hotbar first (left-to-right), then Main Inventory (top-left to bottom-right).
       let remainder = this.shiftFillSlots(slotStack, 27, 35); // Hotbar
       if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
-
       if (remainder === 0) {
         this.setSlotStack(type, index, null);
       } else {
@@ -1438,15 +1428,9 @@ class GameController {
       }
       moved = true;
     } else if (type === 'main') {
-      // 2. From Main Inventory: Fills open container first. If no container is open, fills the first available slot in the Hotbar.
       let remainder = slotStack.count;
-      if (isContainerOpen) {
-        remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
-      }
-      if (remainder > 0) {
-        remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35); // Hotbar
-      }
-
+      if (isContainerOpen) remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35); // Hotbar
       if (remainder === 0) {
         this.setSlotStack(type, index, null);
       } else {
@@ -1455,15 +1439,9 @@ class GameController {
       }
       moved = true;
     } else if (type === 'hotbar') {
-      // 3. From Hotbar: Fills open container first. If no container is open, fills the first available slot in the Main Inventory (top-to-bottom).
       let remainder = slotStack.count;
-      if (isContainerOpen) {
-        remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
-      }
-      if (remainder > 0) {
-        remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
-      }
-
+      if (isContainerOpen) remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
       if (remainder === 0) {
         this.setSlotStack(type, index, null);
       } else {
@@ -1472,7 +1450,9 @@ class GameController {
       }
       moved = true;
     } else if (type === 'offhand') {
-      let remainder = this.shiftFillSlots(slotStack, 27, 35); // Hotbar
+      let remainder = slotStack.count;
+      if (isContainerOpen) remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35); // Hotbar
       if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
       if (remainder === 0) this.setSlotStack(type, index, null);
       else { slotStack.count = remainder; this.setSlotStack(type, index, slotStack); }
@@ -1490,7 +1470,6 @@ class GameController {
     let remainder = stack.count;
     const max = BLOCK_INFO[stack.type].maxStack || 64;
 
-    // 1. Try to fill existing stacks of the same type that are not full
     for (let i = 0; i < 4; i++) {
       const slot = this.inventoryCraftGrid[i];
       if (slot && slot.type === stack.type && slot.count < max) {
@@ -1502,7 +1481,6 @@ class GameController {
       }
     }
 
-    // 2. Try to place remaining items into empty slots
     if (remainder > 0) {
       for (let i = 0; i < 4; i++) {
         if (!this.inventoryCraftGrid[i]) {
@@ -1520,7 +1498,6 @@ class GameController {
     let remainder = stack.count;
     const max = BLOCK_INFO[stack.type].maxStack || 64;
 
-    // Fill existing
     for (let i = startIndex; i <= endIndex; i++) {
       const slot = this.inventorySlots[i];
       if (slot && slot.type === stack.type && slot.count < max) {
@@ -1531,7 +1508,6 @@ class GameController {
         if (remainder <= 0) break;
       }
     }
-    // Fill empty
     if (remainder > 0) {
       for (let i = startIndex; i <= endIndex; i++) {
         if (!this.inventorySlots[i]) {
@@ -1549,7 +1525,6 @@ class GameController {
     let remainder = stack.count;
     const max = BLOCK_INFO[stack.type].maxStack || 64;
 
-    // Fill existing
     for (let i = startIndex; i <= endIndex; i++) {
       const slot = this.inventorySlots[i];
       if (slot && slot.type === stack.type && slot.count < max) {
@@ -1559,7 +1534,6 @@ class GameController {
         if (remainder <= 0) break;
       }
     }
-    // Fill empty
     if (remainder > 0) {
       for (let i = startIndex; i <= endIndex; i++) {
         if (!this.inventorySlots[i]) {
@@ -1601,9 +1575,8 @@ class GameController {
             this.draggedSlots.set(`${type}-${index}`, 0);
           }
         } else {
-          // Double Left-Click (With held item): Instantly pull all matching items from the open inventory UI into the cursor stack until it reaches its maximum stack limit.
+          // Double Left-Click
           if (this.lastClickTime && (Date.now() - this.lastClickTime < 250) && this.lastClickSlot === `${type}-${index}`) {
-            // Double Left-Click (With held item): Instantly pull all matching items from the open inventory UI into the cursor stack until it reaches its maximum stack limit.
             if (this.cursorStack) {
                this.collectAllMatchingToCursor();
                this.updateCursorStackUI();
@@ -1625,11 +1598,10 @@ class GameController {
             // Left-Click (With held item): Place the entire stack.
             this.setSlotStack(type, index, { type: this.cursorStack.type, count: this.cursorStack.count });
 
-            // Initiate Left Drag
             this.isDraggingLeft = true;
             this.dragStartStackCount = this.cursorStack.count;
             this.draggedSlots = new Map();
-            this.draggedSlots.set(`${type}-${index}`, 0); // we just placed it, but for drag distribution it starts at 0 for other slots
+            this.draggedSlots.set(`${type}-${index}`, 0);
 
             this.cursorStack.count = 0; // Keep type reference alive for drag distribution
           } else if (slotStack.type === this.cursorStack.type) {
@@ -1642,7 +1614,6 @@ class GameController {
             if (this.cursorStack.count <= 0) this.cursorStack = null;
             this.setSlotStack(type, index, slotStack);
 
-            // Initiate Left Drag
             if (this.cursorStack) {
               this.isDraggingLeft = true;
               this.dragStartStackCount = this.cursorStack.count;
@@ -1650,7 +1621,7 @@ class GameController {
               this.draggedSlots.set(`${type}-${index}`, slotStack.count - add);
             }
           } else {
-            // Left-Click (With held item): Swap if occupied by different item
+            // Swap
             const temp = { type: slotStack.type, count: slotStack.count };
             this.setSlotStack(type, index, this.cursorStack);
             this.cursorStack = temp;
@@ -1663,11 +1634,10 @@ class GameController {
       if (!this.cursorStack) {
         if (slotStack) {
           if (type === 'craft-out') {
-            // Take whole craft-out
             this.cursorStack = { type: slotStack.type, count: slotStack.count };
             this.collectCraftingOutput();
           } else {
-            // Right-Click (On item): Pick up exactly half the stack (round up if the stack is an odd number).
+            // Right-Click (On item): Pick up exactly half the stack (round up if odd)
             const take = Math.ceil(slotStack.count / 2);
             this.cursorStack = { type: slotStack.type, count: take };
             slotStack.count -= take;
@@ -1680,13 +1650,12 @@ class GameController {
         }
       } else {
         if (type !== 'craft-out') {
-          // Right-Click (With held item): Place exactly one single item from the cursor into the target slot.
+          // Right-Click (With held item): Place exactly one single item from cursor
           if (!slotStack) {
             this.setSlotStack(type, index, { type: this.cursorStack.type, count: 1 });
             this.cursorStack.count -= 1;
             if (this.cursorStack.count <= 0) this.cursorStack = null;
 
-            // Initiate Right Drag
             this.isDraggingRight = true;
             this.draggedSlots = new Map();
             this.draggedSlots.set(`${type}-${index}`, 0);
@@ -1711,7 +1680,6 @@ class GameController {
     this.buildInventoryGridUI();
     this.buildHotbarUI();
   }
-
 
   handleDragUpdate(type, index) {
     if (!this.cursorStack) {
@@ -1753,7 +1721,6 @@ class GameController {
       const numSlots = this.draggedSlots.size;
       let remaining = this.dragStartStackCount;
 
-      // Calculate capacity across all dragged slots
       let totalCapacity = 0;
       this.draggedSlots.forEach((originalCount) => {
           totalCapacity += (max - originalCount);
@@ -1787,7 +1754,6 @@ class GameController {
         }
       });
 
-      // Any items left to give due to full slots go back to the cursor
       this.cursorStack.count = remaining + itemsLeftToGive;
       if (this.cursorStack.count <= 0) this.cursorStack = null;
     }
@@ -1817,6 +1783,7 @@ class GameController {
   }
 
   collectAllMatchingToCursor() {
+
     if (!this.cursorStack) return;
     const max = BLOCK_INFO[this.cursorStack.type].maxStack || 64;
 
