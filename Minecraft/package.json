@@ -1,0 +1,15 @@
+{
+  "name": "minecraft-clone-desktop",
+  "version": "1.0.0",
+  "description": "Desktop Minecraft Clone written in Three.js and Electron",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^28.2.0"
+  },
+  "allowScripts": {
+    "electron": true
+  }
+}

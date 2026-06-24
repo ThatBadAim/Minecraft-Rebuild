@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    window.onerror = function(message, source, lineno, colno, error) {
+      alert("JavaScript Error:\n" + message + "\nSource: " + source + "\nLine: " + lineno + "\nCol: " + colno + "\nStack:\n" + (error ? error.stack : ""));
+      return false;
+    };
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MineCraft Web Clone - Create & Explore</title>
+  <meta name="description" content="A premium 3D browser-based Minecraft clone with procedural world gen, physics, day-night cycles, and block building.">
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Load PointerLockControls from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+</head>
+<body>
+  <!-- SVG Gradients for half-hearts and half-hunger -->
+  <svg style="display: none;">
+    <defs>
+      <linearGradient id="heart-half-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="50%" stop-color="#ff2222"></stop>
+        <stop offset="50%" stop-color="rgba(255, 255, 255, 0.2)"></stop>
+      </linearGradient>
+      <linearGradient id="hunger-half-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="50%" stop-color="#d97706"></stop>
+        <stop offset="50%" stop-color="rgba(255, 255, 255, 0.2)"></stop>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="loading-content">
+      <h1 class="loading-title">MINECRAFT CLONE</h1>
+      <div class="loading-bar-container">
+        <div class="loading-bar-fill" id="loading-bar"></div>
+      </div>
+      <div class="loading-text" id="loading-text">Generating world...</div>
+    </div>
+  </div>
+
+  <!-- Damage Flash Overlay -->
+  <div id="damage-flash"></div>
+
+  <!-- Three.js Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- HUD overlay -->
+  <div id="ui-container">
+    <div id="cursor-item"></div>
+    <!-- Center Crosshair -->
+    <div id="crosshair"></div>
+
+    <!-- Top Left Information Bar -->
+    <div id="top-bar">
+      <div class="stats-card">FPS: <span id="fps-counter">60</span></div>
+      <div class="stats-card">POS: <span id="player-pos">0, 60, 0</span></div>
+      <div class="stats-card">TIME: <span id="game-time">08:00</span></div>
+      <div class="stats-card">MEAT: <span id="meat-count">0</span></div>
+      <div class="stats-card">WOOL: <span id="wool-count">0</span></div>
+    </div>
+
+    <!-- Controls Hint at Top Center -->
+    <div id="controls-hint">Press <b style="color:#fff">E</b> to Open Inventory | Press <b style="color:#fff">R</b> to Reset Position</div>
+
+    <!-- Top Right Auto-Save Indicator -->
+    <div id="save-indicator" class="stats-card hidden">WORLD SAVED</div>
+
+    <!-- Minimap Canvas -->
+    <div id="minimap-container">
+      <canvas id="minimap-canvas" width="120" height="120"></canvas>
+      <div id="minimap-label">MAP</div>
+    </div>
+
+    <!-- Oxygen Bar -->
+    <div id="oxygen-bar-container" class="hidden">
+      <div id="oxygen-bar-fill"></div>
+      <div id="oxygen-bar-label">AIR</div>
+    </div>
+
+    <!-- Bottom Panel (Hotbar and Selected Item Name) -->
+    <div id="hud-bottom">
+      <div id="active-item-name">Grass Block</div>
+      <!-- Health Hearts & Hunger Bars Container -->
+      <div id="stats-hud-container">
+        <div id="hearts-row"></div>
+        <div id="hunger-row"></div>
+      </div>
+      <div id="hotbar">
+        <!-- JS will populate these hotbar slots -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Menu / Play Screen Overlay -->
+  <div id="screen-menu" class="overlay">
+    <div class="mc-panel" style="width: 600px; padding: 28px 36px; display: flex; flex-direction: column; gap: 20px; align-items: center; border-radius: 0;">
+
+      <h2 style="font-family: var(--font-retro); font-size: 14px; color: #fff; text-shadow: 2px 2px 0px #000; margin: 0; text-align: center; letter-spacing: 1px;">GAME OPTIONS</h2>
+
+      <!-- Sliders 2x2 Grid -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%;">
+        <!-- Volume Slider -->
+        <div class="mc-option">
+          <div class="mc-option-label">
+            <span>MASTER VOLUME</span>
+            <span id="val-volume">70%</span>
+          </div>
+          <input type="range" id="slider-volume" min="0" max="1" step="0.05" value="0.7">
+        </div>
+
+        <!-- FOV Slider -->
+        <div class="mc-option">
+          <div class="mc-option-label">
+            <span>FIELD OF VIEW (FOV)</span>
+            <span id="val-fov">75°</span>
+          </div>
+          <input type="range" id="slider-fov" min="60" max="100" step="5" value="75">
+        </div>
+
+        <!-- Render Distance Slider -->
+        <div class="mc-option">
+          <div class="mc-option-label">
+            <span>RENDER DISTANCE</span>
+            <span id="val-render-dist">6 CHUNKS</span>
+          </div>
+          <input type="range" id="slider-render-dist" min="4" max="10" step="1" value="6">
+        </div>
+
+        <!-- Mouse Sensitivity Slider -->
+        <div class="mc-option">
+          <div class="mc-option-label">
+            <span>MOUSE SENSITIVITY</span>
+            <span id="val-sensitivity">1.0x</span>
+          </div>
+          <input type="range" id="slider-sensitivity" min="0.5" max="2.0" step="0.1" value="1.0">
+        </div>
+      </div>
+
+      <!-- Controls Area -->
+      <div style="width: 100%; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-family: var(--font-retro); font-size: 9px; color: #aaa; text-shadow: 1px 1px 0 #000;">KEYBOARD CONTROLS:</div>
+        <div class="mc-controls-container" style="background: rgba(0,0,0,0.4); border: 2px solid #1a1a1a; padding: 12px; height: 160px; overflow-y: auto;">
+          <div class="instructions-grid" style="grid-template-columns: 100px 1fr; gap: 8px 16px; font-size: 11px;">
+            <div class="key-cap-mc">W A S D</div>
+            <div>Move Player</div>
+            <div class="key-cap-mc">SPACE</div>
+            <div>Jump</div>
+            <div class="key-cap-mc">SHIFT</div>
+            <div>Sprint</div>
+            <div class="key-cap-mc">C</div>
+            <div>Crouch / Crafting Menu</div>
+            <div class="key-cap-mc">LEFT CLICK</div>
+            <div>Break targeted block</div>
+            <div class="key-cap-mc">RIGHT CLICK</div>
+            <div>Place block from active slot</div>
+            <div class="key-cap-mc">1 - 9 KEYS</div>
+            <div>Select active hotbar slot</div>
+            <div class="key-cap-mc">E KEY</div>
+            <div>Open / Close Inventory</div>
+            <div class="key-cap-mc">ESC KEY</div>
+            <div>Release mouse / Pause Menu</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Done Button -->
+      <button id="btn-play" class="btn-mc" style="width: 200px; margin-top: 4px;">DONE</button>
+
+    </div>
+  </div>
+
+  <!-- Inventory Overlay Screen -->
+  <div id="inventory-screen" class="overlay hidden">
+    <div class="glass-panel" style="width: 580px;">
+      <h2>INVENTORY</h2>
+
+      <!-- 2x2 Crafting Grid -->
+      <div style="display: flex; gap: 20px; align-items: center; justify-content: center; margin-bottom: 24px; background: rgba(0,0,0,0.2); padding: 12px 24px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+        <div style="font-family: var(--font-retro); font-size: 9px; color: var(--text-muted); margin-right: 8px;">CRAFTING:</div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+          <div class="inv-slot craft-input" id="craft-in-0" style="width: 44px; height: 44px; border-radius: 6px;"></div>
+          <div class="inv-slot craft-input" id="craft-in-1" style="width: 44px; height: 44px; border-radius: 6px;"></div>
+          <div class="inv-slot craft-input" id="craft-in-2" style="width: 44px; height: 44px; border-radius: 6px;"></div>
+          <div class="inv-slot craft-input" id="craft-in-3" style="width: 44px; height: 44px; border-radius: 6px;"></div>
+        </div>
+        <div style="font-size: 16px; color: var(--text-muted); font-family: var(--font-retro);">&#10142;</div>
+        <div class="inv-slot craft-output" id="craft-out" style="width: 48px; height: 48px; border-color: #facc15; border-radius: 8px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.35);"></div>
+      </div>
+
+      <div style="width: 100%;">
+        <!-- 3x9 Main Inventory Grid -->
+        <div class="inventory-grid" id="inv-grid" style="grid-template-columns: repeat(9, 1fr);">
+          <!-- Populate 27 slots via JS -->
+        </div>
+
+        <div style="width: 100%; height: 1px; background: rgba(255, 255, 255, 0.15); margin: 20px 0;"></div>
+
+        <!-- 1x9 Hotbar Row inside Inventory Screen -->
+        <div id="inv-hotbar-grid" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 12px; width: 100%;">
+          <!-- Populate 9 hotbar slots via JS -->
+        </div>
+      </div>
+
+      <div class="hint-text" style="margin-top: 20px;">
+        Click an item to select it, then click another slot to move/swap.<br>
+        Press <b style="color: #fff">E</b> or click outside to close.
+      </div>
+    </div>
+  </div>
+
+  <!-- Crafting Overlay Screen -->
+  <div id="crafting-screen" class="overlay hidden">
+    <div class="glass-panel">
+      <h2>CRAFTING MENU</h2>
+
+      <div class="crafting-list" id="craft-list">
+        <!-- JS will populate recipe items -->
+      </div>
+
+      <div class="hint-text" style="margin-top: 16px;">
+        Click Craft to create blocks and items.<br>
+        Press <b style="color: #fff">C</b> or click anywhere outside to close.
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over Screen Overlay -->
+  <div id="screen-gameover" class="overlay hidden">
+    <div class="glass-panel" style="border-color: rgba(255, 74, 74, 0.3); box-shadow: 0 12px 40px 0 rgba(255, 0, 0, 0.2);">
+      <h1 style="color: #ff4a4a; text-shadow: 0 4px 12px rgba(255, 74, 74, 0.4); font-family: 'Press Start 2P', monospace; font-size: 24px; margin-bottom: 24px;">GAME OVER</h1>
+      <p style="margin-bottom: 28px; color: var(--text-muted); font-size: 14px; text-align: center;">You were defeated by the monsters of the night.</p>
+      <button id="btn-respawn" class="btn-primary" style="background: #ff4a4a; box-shadow: 0 4px 14px rgba(255, 74, 74, 0.4);">RESPAWN</button>
+    </div>
+  </div>
+
+  <!-- Main Game Logic Script -->
+  <script type="module" src="game.js"></script>
+</body>
+</html>
