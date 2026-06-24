@@ -25,7 +25,18 @@ export const BLOCKS = {
   WOOL: 20,
   TORCH: 21,
   TNT: 22,
-  COAL: 23
+  COAL: 23,
+  ICE: 24,
+  SLIME: 25,
+  COBWEB: 26,
+  SOUL_SAND: 27,
+  MAGMA_BLOCK: 28,
+  MYCELIUM: 29,
+  SANDSTONE: 30,
+  SNOW_LAYER: 31,
+  EMERALD_ORE: 32,
+  MONSTER_EGG: 33,
+  CACTUS: 34
 };
 
 // Metadata for blocks
@@ -53,12 +64,34 @@ export const BLOCK_INFO = {
   [BLOCKS.WOOL]: { name: 'Wool', solid: false, transparent: true, uvs: { top: [0, 3], side: [0, 3], bottom: [0, 3] } },
   [BLOCKS.TORCH]: { name: 'Torch', solid: false, transparent: true, uvs: { top: [1, 3], side: [1, 3], bottom: [1, 3] } },
   [BLOCKS.TNT]: { name: 'TNT', solid: true, transparent: false, uvs: { top: [2, 3], side: [3, 3], bottom: [2, 3] } },
-  [BLOCKS.COAL]: { name: 'Coal Ore', solid: true, transparent: false, uvs: { top: [4, 3], side: [4, 3], bottom: [4, 3] } }
+  [BLOCKS.COAL]: { name: 'Coal Ore', solid: true, transparent: false, uvs: { top: [4, 3], side: [4, 3], bottom: [4, 3] } },
+  [BLOCKS.ICE]: { name: 'Ice', solid: true, transparent: true, uvs: { top: [5, 3], side: [5, 3], bottom: [5, 3] } },
+  [BLOCKS.SLIME]: { name: 'Slime Block', solid: true, transparent: true, uvs: { top: [6, 3], side: [6, 3], bottom: [6, 3] } },
+  [BLOCKS.COBWEB]: { name: 'Cobweb', solid: false, transparent: true, uvs: { top: [7, 3], side: [7, 3], bottom: [7, 3] } },
+  [BLOCKS.SOUL_SAND]: { name: 'Soul Sand', solid: true, transparent: false, uvs: { top: [2, 0], side: [2, 0], bottom: [2, 0] } },
+  [BLOCKS.MAGMA_BLOCK]: { name: 'Magma Block', solid: true, transparent: false, uvs: { top: [1, 1], side: [1, 1], bottom: [1, 1] } }
 };
 
 // Add type explicitly to BLOCK_INFO objects
 for (const key in BLOCK_INFO) {
   BLOCK_INFO[key].type = parseInt(key, 10);
+
+  // Storage Quantities & Stacking Limits
+  const type = BLOCK_INFO[key].type;
+  // Unstackable (Max 1): Tools, weapons, armor, potions, boats, and items holding unique internal data (e.g., Shulker Boxes, filled Buckets).
+  const unstackables = [BLOCKS.STONE_PICKAXE, BLOCKS.WATER];
+
+  // Limited Stacking (Max 16): Specific utility/throwable items (e.g., Ender Pearls, Eggs, Snowballs, Signs).
+  const limitedStackables = [BLOCKS.MEAT, BLOCKS.WOOL, BLOCKS.SLIME, BLOCKS.COBWEB, BLOCKS.TNT, BLOCKS.ICE, BLOCKS.STICK, BLOCKS.TORCH, BLOCKS.MONSTER_EGG];
+
+  if (unstackables.includes(type)) {
+    BLOCK_INFO[key].maxStack = 1;
+  } else if (limitedStackables.includes(type)) {
+    BLOCK_INFO[key].maxStack = 16;
+  } else {
+    // Standard Stacking (Max 64): Standard blocks and materials (e.g., building blocks, raw resources).
+    BLOCK_INFO[key].maxStack = 64;
+  }
 }
 
 const ATLAS_COLS = 8;
@@ -570,6 +603,32 @@ function generateTextureAtlas(onCanvasCreated) {
           ctx.fillRect(tx + spot.x, ty + spot.y, spot.w, 1);
         }
       }
+
+      else if (id === 29) { // Ice
+        ctx.fillStyle = 'rgba(153, 204, 255, 0.7)';
+        ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(tx + 2, ty + 2, 4, 1);
+        ctx.fillRect(tx + 10, ty + 8, 3, 1);
+      }
+      else if (id === 30) { // Slime
+        ctx.fillStyle = 'rgba(110, 200, 100, 0.8)';
+        ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+        ctx.fillStyle = 'rgba(150, 230, 140, 0.9)';
+        ctx.fillRect(tx + 4, ty + 4, 8, 8);
+      }
+      else if (id === 31) { // Cobweb
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.0)';
+        ctx.fillRect(tx, ty, TEXTURE_SIZE, TEXTURE_SIZE);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(tx, ty); ctx.lineTo(tx + TEXTURE_SIZE, ty + TEXTURE_SIZE);
+        ctx.moveTo(tx + TEXTURE_SIZE, ty); ctx.lineTo(tx, ty + TEXTURE_SIZE);
+        ctx.moveTo(tx + 8, ty); ctx.lineTo(tx + 8, ty + TEXTURE_SIZE);
+        ctx.moveTo(tx, ty + 8); ctx.lineTo(tx + TEXTURE_SIZE, ty + 8);
+        ctx.stroke();
+      }
+
     }
   }
 
@@ -585,9 +644,10 @@ function generateTextureAtlas(onCanvasCreated) {
 }
 
 export class WorldManager {
-  constructor(scene, onChunkBuilt = null) {
+  constructor(scene, onChunkBuilt = null, onBlockBroken = null) {
     this.scene = scene;
     this.onChunkBuilt = onChunkBuilt;
+    this.onBlockBroken = onBlockBroken;
     this.chunkSize = 16;
     this.chunkHeight = 64;
 
@@ -741,6 +801,7 @@ export class WorldManager {
       chunk.meshTransparent = new THREE.Mesh(geo, this.materialTransparent);
       chunk.meshTransparent.castShadow = true;
       chunk.meshTransparent.receiveShadow = true;
+      chunk.meshTransparent.layers.set(1); // OIT Translucent Layer
       this.scene.add(chunk.meshTransparent);
       this.meshList.push(chunk.meshTransparent);
     }
@@ -785,8 +846,14 @@ export class WorldManager {
     const lx = ((x % this.chunkSize) + this.chunkSize) % this.chunkSize;
     const lz = ((z % this.chunkSize) + this.chunkSize) % this.chunkSize;
 
-    const type = chunk.blocks[lx][y][lz];
-    return BLOCK_INFO[type];
+    // Apply bitmask 0x7FFF to get base block type (ignoring waterlogged bit 0x8000)
+    const rawType = chunk.blocks[lx][y][lz];
+    const type = rawType & 0x7FFF;
+    const blockInfo = Object.assign({}, BLOCK_INFO[type]);
+    if (rawType & 0x8000) {
+      blockInfo.waterlogged = true;
+    }
+    return blockInfo;
   }
 
   setBlock(x, y, z, type) {
@@ -834,7 +901,7 @@ export class WorldManager {
     // Water flow queueing logic
     if (type === BLOCKS.WATER) {
       if (!this.waterQueue.some(w => w.x === x && w.y === y && w.z === z)) {
-        this.waterQueue.push({ x, y, z, life: 5 });
+        this.waterQueue.push({ x, y, z, life: 7 }); // N-1 strength max 7
       }
     } else if (type === BLOCKS.AIR) {
       const neighbors = [
@@ -847,7 +914,7 @@ export class WorldManager {
       for (const n of neighbors) {
         const nb = this.getBlock(n.x, n.y, n.z);
         if (nb && nb.type === BLOCKS.WATER) {
-          const life = n.isAbove ? 5 : 4;
+          const life = n.isAbove ? 7 : 6;
           if (!this.waterQueue.some(w => w.x === n.x && w.y === n.y && w.z === n.z)) {
             this.waterQueue.push({ x: n.x, y: n.y, z: n.z, life });
           }
@@ -876,16 +943,27 @@ export class WorldManager {
 
       // 1. Flow down
       const downBlock = this.getBlock(src.x, src.y - 1, src.z);
-      if (downBlock && downBlock.type === BLOCKS.AIR) {
-        this.setBlock(src.x, src.y - 1, src.z, BLOCKS.WATER);
+      // Redstone logic: allow breaking specific blocks (e.g. TORCH, COBWEB)
+      const isWaterloggable = downBlock && (downBlock.type === BLOCKS.TORCH || downBlock.type === BLOCKS.COBWEB);
+      const canFlowDown = downBlock && (downBlock.type === BLOCKS.AIR || isWaterloggable);
+
+      if (canFlowDown) {
+        if (isWaterloggable) {
+          if (this.onBlockBroken) this.onBlockBroken(downBlock.type, src.x, src.y - 1, src.z);
+          this.setBlock(src.x, src.y - 1, src.z, BLOCKS.WATER); // Redstone rule: break it
+        } else {
+          this.setBlock(src.x, src.y - 1, src.z, BLOCKS.WATER);
+        }
         const key = `${src.x},${src.y - 1},${src.z}`;
         if (!visited.has(key)) {
           visited.add(key);
-          nextQueue.push({ x: src.x, y: src.y - 1, z: src.z, life: src.life });
+          nextQueue.push({ x: src.x, y: src.y - 1, z: src.z, life: 7 }); // Downward flow resets to max strength
         }
       }
+
       // 2. Spread horizontally
-      if (src.life > 1) {
+      // Only spread horizontally if we cannot flow down or if we are already a source/strong flowing block
+      if (!canFlowDown && src.life > 1) {
         const neighbors = [
           { x: src.x + 1, y: src.y, z: src.z },
           { x: src.x - 1, y: src.y, z: src.z },
@@ -894,8 +972,15 @@ export class WorldManager {
         ];
         for (const n of neighbors) {
           const nb = this.getBlock(n.x, n.y, n.z);
-          if (nb && nb.type === BLOCKS.AIR) {
-            this.setBlock(n.x, n.y, n.z, BLOCKS.WATER);
+          const isNbWaterloggable = nb && (nb.type === BLOCKS.TORCH || nb.type === BLOCKS.COBWEB);
+
+          if (nb && (nb.type === BLOCKS.AIR || isNbWaterloggable)) {
+            if (isNbWaterloggable) {
+              if (this.onBlockBroken) this.onBlockBroken(nb.type, n.x, n.y, n.z);
+              this.setBlock(n.x, n.y, n.z, BLOCKS.WATER); // Redstone rule: break it
+            } else {
+              this.setBlock(n.x, n.y, n.z, BLOCKS.WATER);
+            }
             const key = `${n.x},${n.y},${n.z}`;
             if (!visited.has(key)) {
               visited.add(key);

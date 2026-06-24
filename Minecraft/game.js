@@ -2,6 +2,7 @@ import { PhysicsEngine } from './physics.js';
 import { WorldManager, BLOCKS, BLOCK_INFO } from './world.js';
 import { gameAudio } from './audio.js';
 import { EntityManager } from './entities.js';
+import { UIEngine, TitleScreen } from './menu_ui.js';
 
 class GameController {
   constructor() {
@@ -22,6 +23,9 @@ class GameController {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
+    // Order-Independent Transparency (OIT) Framebuffers setup
+    this.setupOITRenderTargets();
+
     // 2. Physics & World
     this.physics = new PhysicsEngine();
     this.playerHealth = 20;
@@ -35,6 +39,11 @@ class GameController {
     this.entityManager = new EntityManager(this.scene, (dmg) => this.takeDamage(dmg), (type) => this.handleCollect(type));
     this.world = new WorldManager(this.scene, (cx, cz) => {
       this.entityManager.spawnAnimalInChunk(cx, cz, this.world, this.gameTime);
+    }, (type, x, y, z) => {
+      // OnBlockBroken callback for redstone logic
+      if (this.entityManager) {
+        this.entityManager.spawnCollectible(type, x + 0.5, y + 0.3, z + 0.5);
+      }
     });
 
     // 3. User Controls
@@ -48,18 +57,16 @@ class GameController {
 
     // Slot-based Inventory: 36 slots (0-26 main inventory, 27-35 hotbar)
     this.inventorySlots = Array(36).fill(null);
-    this.offhandSlot = null; // Offhand slot
+    this.offhandSlot = null;
 
-    // Cursor stack & dragging states
+    // Cursor dragging and storage rules
     this.cursorStack = null;
-    this.dragMode = null; // 'left' or 'right'
-    this.dragSlots = new Set();
-    this.dragInitialCount = 0;
-    this.dragLastCursorCount = 0;
-
-    // Hover state for keyboard shortcuts
-    this.hoveredSlotArray = null;
     this.hoveredSlotIndex = null;
+    this.hoveredSlotType = null; // 'main', 'hotbar', 'craft-in', 'craft-out', 'offhand'
+    this.isDraggingLeft = false;
+    this.isDraggingRight = false;
+    this.draggedSlots = new Map();
+    this.dragStartStackCount = 0;
 
     // 2x2 Crafting Grid states (0-3 input slots, output)
     this.inventoryCraftGrid = Array(4).fill(null);
@@ -167,8 +174,8 @@ class GameController {
     this.iconDataUrlCache = {};
 
     // Oxygen / underwater system
-    this.oxygenLevel = 30.0; // 30 seconds of breath
-    this.maxOxygen = 30.0;
+    this.oxygenLevel = 15.0; // 15 seconds of breath
+    this.maxOxygen = 15.0;
     this.oxygenDamageTimer = 0;
 
     // Sprint FOV
@@ -210,6 +217,10 @@ class GameController {
     this.lastPosString = '0, 60, 0';
 
     // Initialize UI and Events
+    this.uiEngine = new UIEngine('mc-ui-canvas');
+    this.uiEngine.setScreen(new TitleScreen());
+    window.gameController = this; // Expose for the UI to be able to lock controls and start the game
+
     this.setupEvents();
     this.buildHotbarUI();
     this.buildInventoryGridUI();
@@ -254,6 +265,130 @@ class GameController {
     this.animate();
   }
 
+  setupOITRenderTargets() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    // Create a base depth texture to be shared or copied across passes
+    const depthTexture = new THREE.DepthTexture(w, h);
+    depthTexture.type = THREE.UnsignedIntType;
+
+    // 1. Opaque FBO (Solid blocks, entities)
+    this.rtOpaque = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      depthTexture: depthTexture
+    });
+
+    // For true Order-Independent Transparency sorting in the compositing shader, each
+    // transparent pass needs its own unique depth texture so it doesn't overwrite the main
+    // depth or each other, and so we can sort them back-to-front per pixel.
+
+    const depthTexTranslucent = new THREE.DepthTexture(w, h);
+    depthTexTranslucent.type = THREE.UnsignedIntType;
+    const depthTexParticles = new THREE.DepthTexture(w, h);
+    depthTexParticles.type = THREE.UnsignedIntType;
+    const depthTexClouds = new THREE.DepthTexture(w, h);
+    depthTexClouds.type = THREE.UnsignedIntType;
+
+    // 2. Translucent FBO (Water, Glass, Leaves)
+    this.rtTranslucent = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexTranslucent
+    });
+    // 3. Particles FBO
+    this.rtParticles = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexParticles
+    });
+    // 4. Clouds FBO
+    this.rtClouds = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat, depthTexture: depthTexClouds
+    });
+
+    // Fullscreen compositing quad
+    this.oitCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.oitScene = new THREE.Scene();
+
+    this.oitMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uOpaqueColor: { value: this.rtOpaque.texture },
+        uTranslucentColor: { value: this.rtTranslucent.texture },
+        uParticlesColor: { value: this.rtParticles.texture },
+        uCloudsColor: { value: this.rtClouds.texture },
+        uOpaqueDepth: { value: depthTexture },
+        uTranslucentDepth: { value: depthTexTranslucent },
+        uParticlesDepth: { value: depthTexParticles },
+        uCloudsDepth: { value: depthTexClouds }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uOpaqueColor;
+        uniform sampler2D uTranslucentColor;
+        uniform sampler2D uParticlesColor;
+        uniform sampler2D uCloudsColor;
+        uniform sampler2D uOpaqueDepth;
+        uniform sampler2D uTranslucentDepth;
+        uniform sampler2D uParticlesDepth;
+        uniform sampler2D uCloudsDepth;
+
+        varying vec2 vUv;
+
+        struct LayerData {
+            vec4 color;
+            float depth;
+        };
+
+        // Sort descending so the furthest depth is at layers[0]. This ensures alpha blending happens back-to-front.
+        #define SWAP(a, b) if (layers[a].depth < layers[b].depth) { LayerData temp = layers[a]; layers[a] = layers[b]; layers[b] = temp; }
+
+        void main() {
+            vec4 opaqueCol    = texture2D(uOpaqueColor, vUv);
+            vec4 transCol     = texture2D(uTranslucentColor, vUv);
+            vec4 particlesCol = texture2D(uParticlesColor, vUv);
+            vec4 cloudsCol    = texture2D(uCloudsColor, vUv);
+
+            float opaqueD    = texture2D(uOpaqueDepth, vUv).r;
+            float transD     = texture2D(uTranslucentDepth, vUv).r;
+            float particlesD = texture2D(uParticlesDepth, vUv).r;
+            float cloudsD    = texture2D(uCloudsDepth, vUv).r;
+
+            // Initialize layers array.
+            // If a layer has 0 alpha (empty), push it to the back by giving it a depth of 1.0
+            LayerData layers[3];
+            layers[0] = LayerData(transCol,     transCol.a > 0.0 ? transD : 1.0);
+            layers[1] = LayerData(particlesCol, particlesCol.a > 0.0 ? particlesD : 1.0);
+            layers[2] = LayerData(cloudsCol,    cloudsCol.a > 0.0 ? cloudsD : 1.0);
+
+            // 3-element sorting network
+            SWAP(0, 2);
+            SWAP(0, 1);
+            SWAP(1, 2);
+
+            vec4 finalColor = opaqueCol;
+
+            for(int i = 0; i < 3; i++) {
+                if (layers[i].depth < opaqueD && layers[i].depth < 1.0 && layers[i].color.a > 0.0) {
+                    finalColor.rgb = mix(finalColor.rgb, layers[i].color.rgb, layers[i].color.a);
+                }
+            }
+
+            gl_FragColor = finalColor;
+        }
+      `,
+      depthWrite: false,
+      depthTest: false
+    });
+
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.oitMaterial);
+    this.oitScene.add(quad);
+  }
+
   saveInventory() {
     const serialized = this.inventorySlots.map(slot => slot ? { type: slot.type, count: slot.count } : null);
     localStorage.setItem('minecraft_clone_inventory', JSON.stringify(serialized));
@@ -275,9 +410,11 @@ class GameController {
 
   setupLighting() {
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    this.ambientLight.layers.enableAll();
     this.scene.add(this.ambientLight);
 
     this.sunLight = new THREE.DirectionalLight(0xffffff, 0.95);
+    this.sunLight.layers.enableAll();
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
     this.sunLight.shadow.mapSize.height = 2048;
@@ -503,6 +640,7 @@ class GameController {
 
         const geo = new THREE.BoxGeometry(w, h, d);
         const mesh = new THREE.Mesh(geo, this.cloudMaterial);
+        mesh.layers.set(3); // OIT Clouds Layer
 
         const ox = (Math.random() - 0.5) * 12;
         const oz = (Math.random() - 0.5) * 12;
@@ -538,13 +676,22 @@ class GameController {
     this.physics.position.x = 8;
     this.physics.position.z = 8;
     let spawnY = 30; // Default fallback
-    for (let y = this.world.chunkHeight - 1; y >= 0; y--) {
-      const block = this.world.getBlock(8, y, 8);
-      if (block && block.solid) {
-        spawnY = y + 1;
-        break;
+
+    // Make sure chunks exist
+    const block = this.world.getBlock(8, 0, 8);
+    if (!block || block.type === BLOCKS.AIR && this.world.chunks['0,0'] && this.world.chunks['0,0'].placeholder) {
+      // Chunk not loaded yet
+      spawnY = 60;
+    } else {
+      for (let y = this.world.chunkHeight - 1; y >= 0; y--) {
+        const check = this.world.getBlock(8, y, 8);
+        if (check && check.solid) {
+          spawnY = y + 1;
+          break;
+        }
       }
     }
+
     this.physics.position.y = spawnY;
     this.physics.onGround = true;
   }
@@ -605,40 +752,29 @@ class GameController {
     const hungerRow = document.getElementById('hunger-row');
     if (!heartsRow || !hungerRow) return;
 
-    // Render Hearts (10 hearts representing 20 HP)
     let heartsHtml = '';
     for (let i = 0; i < 10; i++) {
       const heartVal = (i + 1) * 2;
-      let styleFill = 'fill: #ff2222;'; // Full
-
       if (this.playerHealth >= heartVal) {
-        styleFill = 'fill: #ff2222;';
+        heartsHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M1 2h2v1h-2zM3 1h3v1h-3zM6 2h2v1h-2zM0 3h1v3h-1zM1 6h1v1h-1zM2 7h1v1h-1zM3 8h3v1h-3zM6 7h1v1h-1zM7 6h1v1h-1zM8 3h1v3h-1z"/><path fill="#f00" d="M1 3h7v1h-7zM1 4h7v1h-7zM1 5h7v1h-7zM2 6h5v1h-5zM3 7h3v1h-3z"/></svg>`;
       } else if (this.playerHealth === heartVal - 1) {
-        styleFill = 'fill: url(#heart-half-grad);'; // Half
+        heartsHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M1 2h2v1h-2zM3 1h3v1h-3zM6 2h2v1h-2zM0 3h1v3h-1zM1 6h1v1h-1zM2 7h1v1h-1zM3 8h3v1h-3zM6 7h1v1h-1zM7 6h1v1h-1zM8 3h1v3h-1z"/><path fill="#f00" d="M1 3h3v1h-3zM1 4h3v1h-3zM1 5h3v1h-3zM2 6h2v1h-2zM3 7h1v1h-1z"/></svg>`;
       } else {
-        styleFill = 'fill: rgba(255, 255, 255, 0.2);'; // Empty
+        heartsHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M1 2h2v1h-2zM3 1h3v1h-3zM6 2h2v1h-2zM0 3h1v3h-1zM1 6h1v1h-1zM2 7h1v1h-1zM3 8h3v1h-3zM6 7h1v1h-1zM7 6h1v1h-1zM8 3h1v3h-1z"/></svg>`;
       }
-
-      heartsHtml += `<svg class="hud-icon" style="${styleFill}" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
     }
     heartsRow.innerHTML = heartsHtml;
 
-    // Render Hunger (10 drumsticks representing 20 Hunger)
     let hungerHtml = '';
     for (let i = 0; i < 10; i++) {
       const hungerVal = (i + 1) * 2;
-      let styleFill = 'fill: #d97706;'; // Full
-
       if (this.playerHunger >= hungerVal) {
-        styleFill = 'fill: #d97706;';
+        hungerHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M5 0h2v1h-2zM7 1h2v2h-2zM5 1h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM0 5h2v2h-2zM2 7h2v2h-2z"/><path fill="#8b4513" d="M6 1h1v1h-1zM7 2h1v1h-1zM6 2h1v1h-1zM5 2h1v1h-1zM4 3h2v1h-2zM3 4h2v1h-2zM3 5h1v1h-1zM2 5h1v1h-1z"/></svg>`;
       } else if (this.playerHunger === hungerVal - 1) {
-        styleFill = 'fill: url(#hunger-half-grad);'; // Half
+        hungerHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M5 0h2v1h-2zM7 1h2v2h-2zM5 1h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM0 5h2v2h-2zM2 7h2v2h-2z"/><path fill="#8b4513" d="M6 1h1v1h-1zM7 2h1v1h-1zM6 2h1v1h-1zM5 2h1v1h-1z"/></svg>`;
       } else {
-        styleFill = 'fill: rgba(255, 255, 255, 0.2);'; // Empty
+        hungerHtml += `<svg class="hud-icon" viewBox="0 0 9 9" style="width: 18px; height: 18px; image-rendering: pixelated;"><path fill="#000" d="M5 0h2v1h-2zM7 1h2v2h-2zM5 1h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM0 5h2v2h-2zM2 7h2v2h-2z"/></svg>`;
       }
-
-      // Drumstick bone/meat path shape
-      hungerHtml += `<svg class="hud-icon" style="${styleFill}" viewBox="0 0 24 24"><path d="M18.5 3c-1.5 0-3 1-3.5 2.5C14 7 13.5 9 12 10.5c-1.5 1.5-3.5 2-5 3C5.5 14 4.5 15.5 4.5 17c0 2.2 1.8 4 4 4s4-1.8 4-4c0-1.5-1-3-2.5-3.5 1.5-1.5 3.5-2 5-3.5 1.5-1.5 2-3.5 3-5 1.5-.5 2.5-2 2.5-3.5c0-1.7-1.3-3-3-3z"/></svg>`;
     }
     hungerRow.innerHTML = hungerHtml;
   }
@@ -649,9 +785,9 @@ class GameController {
     if (goScreen) {
       goScreen.classList.remove('hidden');
     }
-    const menuScreen = document.getElementById('screen-menu');
-    if (menuScreen) {
-      menuScreen.classList.add('hidden');
+    // We handle menu via uiEngine now
+    if (this.uiEngine && this.uiEngine.canvas) {
+      this.uiEngine.canvas.style.display = 'none';
     }
   }
 
@@ -668,97 +804,20 @@ class GameController {
   }
 
   setupEvents() {
-    const playBtn = document.getElementById('btn-play');
-    const menuScreen = document.getElementById('screen-menu');
     const inventoryScreen = document.getElementById('inventory-screen');
     const craftingScreen = document.getElementById('crafting-screen');
 
-    // Load settings from localStorage
-    const savedVol = localStorage.getItem('minecraft_clone_volume');
-    const savedFov = localStorage.getItem('minecraft_clone_fov');
-    const savedDist = localStorage.getItem('minecraft_clone_render_dist');
-    const savedSens = localStorage.getItem('minecraft_clone_sensitivity');
-
-    const volVal = savedVol !== null ? parseFloat(savedVol) : 0.7;
-    const fovVal = savedFov !== null ? parseInt(savedFov, 10) : 75;
-    const distVal = savedDist !== null ? parseInt(savedDist, 10) : 6;
-    const sensVal = savedSens !== null ? parseFloat(savedSens) : 1.0;
-
-    // Apply values to UI elements
-    const sliderVol = document.getElementById('slider-volume');
-    const sliderFov = document.getElementById('slider-fov');
-    const sliderDist = document.getElementById('slider-render-dist');
-    const sliderSens = document.getElementById('slider-sensitivity');
-
-    const labelVol = document.getElementById('val-volume');
-    const labelFov = document.getElementById('val-fov');
-    const labelDist = document.getElementById('val-render-dist');
-    const labelSens = document.getElementById('val-sensitivity');
-
-    if (sliderVol) {
-      sliderVol.value = volVal;
-      labelVol.innerText = Math.round(volVal * 100) + '%';
-      gameAudio.setVolume(volVal);
-      sliderVol.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        labelVol.innerText = Math.round(val * 100) + '%';
-        gameAudio.setVolume(val);
-        localStorage.setItem('minecraft_clone_volume', val);
-      });
-    }
-
-    if (sliderFov) {
-      sliderFov.value = fovVal;
-      labelFov.innerText = fovVal + '°';
-      this.camera.fov = fovVal;
-      this.camera.updateProjectionMatrix();
-      sliderFov.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        labelFov.innerText = val + '°';
-        this.camera.fov = val;
-        this.camera.updateProjectionMatrix();
-        localStorage.setItem('minecraft_clone_fov', val);
-      });
-    }
-
-    if (sliderDist) {
-      sliderDist.value = distVal;
-      labelDist.innerText = distVal + ' Chunks';
-      this.world.renderRadius = distVal;
-      sliderDist.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        labelDist.innerText = val + ' Chunks';
-        this.world.renderRadius = val;
-        localStorage.setItem('minecraft_clone_render_dist', val);
-      });
-    }
-
-    if (sliderSens) {
-      sliderSens.value = sensVal;
-      labelSens.innerText = sensVal.toFixed(1) + 'x';
-      this.controls.pointerSpeed = sensVal;
-      sliderSens.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        labelSens.innerText = val.toFixed(1) + 'x';
-        this.controls.pointerSpeed = val;
-        localStorage.setItem('minecraft_clone_sensitivity', val);
-      });
-    }
-
     // Controls locking
-    playBtn.addEventListener('click', () => {
-      if (this.playerHealth <= 0) return;
-      this.controls.lock();
-      gameAudio.resume();
-    });
-
     this.controls.addEventListener('lock', () => {
       if (this.playerHealth <= 0) return;
-      menuScreen.classList.add('hidden');
+      if (this.uiEngine && this.uiEngine.canvas) {
+        this.uiEngine.canvas.style.display = 'none';
+      }
       inventoryScreen.classList.add('hidden');
       craftingScreen.classList.add('hidden');
       this.isInventoryOpen = false;
       this.isCraftingOpen = false;
+      gameAudio.resume();
     });
 
     this.controls.addEventListener('unlock', () => {
@@ -771,11 +830,13 @@ class GameController {
       }
       if (this.playerHealth <= 0) {
         document.getElementById('screen-gameover').classList.remove('hidden');
-        document.getElementById('screen-menu').classList.add('hidden');
         return;
       }
       if (!this.isInventoryOpen && !this.isCraftingOpen) {
-        menuScreen.classList.remove('hidden');
+        // Show our new UI Engine canvas when controls are unlocked
+        if (this.uiEngine && this.uiEngine.canvas) {
+            this.uiEngine.canvas.style.display = 'block';
+        }
       }
     });
 
@@ -793,120 +854,18 @@ class GameController {
       }
     });
 
-    // Cursor Tracking and Dragging logic
-    document.addEventListener('mousemove', (e) => {
-      if (this.isInventoryOpen || this.isCraftingOpen) {
-        const cursorItemEl = document.getElementById('cursor-item');
-        if (cursorItemEl) {
-          cursorItemEl.style.left = `${e.clientX + 10}px`;
-          cursorItemEl.style.top = `${e.clientY + 10}px`;
-
-          if (this.cursorStack) {
-            cursorItemEl.style.display = 'block';
-            const iconUrl = this.getItemIconDataURL(this.cursorStack.type);
-            const iconEl = cursorItemEl.querySelector('.slot-icon');
-            if (iconUrl) {
-              iconEl.style.backgroundImage = `url(${iconUrl})`;
-              iconEl.style.backgroundSize = 'cover';
-              iconEl.style.background = '';
-            } else {
-              iconEl.style.backgroundImage = '';
-              iconEl.style.background = this.getBlockColorStyle(this.cursorStack.type);
-            }
-            cursorItemEl.querySelector('.slot-count').innerText = this.cursorStack.count;
-          } else {
-            cursorItemEl.style.display = 'none';
-          }
-        }
-      }
-    });
-
-    document.addEventListener('mousedown', (e) => {
-      if (!this.isInventoryOpen && !this.isCraftingOpen) return;
-      if (this.cursorStack) {
-        if (e.button === 0) {
-          this.dragMode = 'left';
-          this.dragInitialCount = this.cursorStack.count;
-          this.dragLastCursorCount = this.cursorStack.count;
-          this.dragSlots.clear();
-        } else if (e.button === 2) {
-          this.dragMode = 'right';
-          this.dragInitialCount = this.cursorStack.count;
-          this.dragLastCursorCount = this.cursorStack.count;
-          this.dragSlots.clear();
-        }
-      }
-    });
-
-    document.addEventListener('mouseup', (e) => {
-      if (this.dragMode) {
-        this.dragMode = null;
-        this.dragSlots.clear();
-        if (this.dragOriginalCounts) {
-          this.dragOriginalCounts.clear();
-        }
-        this.buildInventoryGridUI();
-        this.buildHotbarUI();
-      }
-
-      // Outside UI click drops item
-      if ((this.isInventoryOpen || this.isCraftingOpen) && this.cursorStack) {
-        const invScreen = document.getElementById('inventory-screen');
-        const craftScreen = document.getElementById('crafting-screen');
-        const clickedOutsideInv = invScreen && !invScreen.classList.contains('hidden') && e.target === invScreen;
-        const clickedOutsideCraft = craftScreen && !craftScreen.classList.contains('hidden') && e.target === craftScreen;
-
-        if (clickedOutsideInv || clickedOutsideCraft) {
-          // Drop item
-          if (e.button === 0 || e.button === 2) {
-             if (this.entityManager) {
-               // Use player's face direction to drop
-               const dropPos = this.physics.position.clone();
-               dropPos.add(this.camDirCache.clone().multiplyScalar(1.5));
-               dropPos.y += 1.5;
-               for(let i=0; i<this.cursorStack.count; i++){
-                 this.entityManager.spawnCollectible(this.cursorStack.type, dropPos.x, dropPos.y, dropPos.z);
-               }
-             }
-             this.cursorStack = null;
-             const cursorItemEl = document.getElementById('cursor-item');
-             if(cursorItemEl) cursorItemEl.style.display = 'none';
-          }
-        }
-      }
-    });
-
     // 2x2 Crafting Grid click bindings
     for (let i = 0; i < 4; i++) {
       const inputEl = document.getElementById(`craft-in-${i}`);
       if (inputEl) {
-        inputEl.addEventListener('mousedown', (e) => {
-          if (e.button === 0 || e.button === 2) {
-            this.handleCraftInputClick(i, e);
-          }
-        });
-        inputEl.addEventListener('contextmenu', e => e.preventDefault());
-        inputEl.addEventListener('mouseenter', () => {
-          this.hoveredSlotArray = this.inventoryCraftGrid;
-          this.hoveredSlotIndex = i;
-          this.handleSlotDrag(this.inventoryCraftGrid, i);
-        });
-        inputEl.addEventListener('mouseleave', () => {
-          if (this.hoveredSlotArray === this.inventoryCraftGrid && this.hoveredSlotIndex === i) {
-            this.hoveredSlotArray = null;
-            this.hoveredSlotIndex = null;
-          }
-        });
+        inputEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = i; this.hoveredSlotType = 'craft-in'; this.handleDragUpdate('craft-in', i); });
+        inputEl.addEventListener('mouseleave', () => { if (this.hoveredSlotIndex === i && this.hoveredSlotType === 'craft-in') { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
       }
     }
     const craftOutputEl = document.getElementById('craft-out');
     if (craftOutputEl) {
-      craftOutputEl.addEventListener('mousedown', (e) => {
-        if (e.button === 0 || e.button === 2) {
-          this.handleCraftOutputClick(e);
-        }
-      });
-      craftOutputEl.addEventListener('contextmenu', e => e.preventDefault());
+      craftOutputEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = 0; this.hoveredSlotType = 'craft-out'; });
+      craftOutputEl.addEventListener('mouseleave', () => { if (this.hoveredSlotType === 'craft-out') { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
     }
     craftingScreen.addEventListener('click', (e) => {
       if (e.target === craftingScreen) {
@@ -981,24 +940,81 @@ class GameController {
         }
       }
 
+      // NEW SHORTCUT IMPLEMENTATION
+      if (this.isInventoryOpen || this.isCraftingOpen) {
+        if (this.hoveredSlotType !== null && this.hoveredSlotIndex !== null) {
+          const type = this.hoveredSlotType;
+          const index = this.hoveredSlotIndex;
+
+          // Number Keys (1-9): Swap item with respective slot on player's Hotbar.
+          if (e.key >= '1' && e.key <= '9') {
+            const hbIndex = 27 + parseInt(e.key) - 1;
+            if (type !== 'hotbar' || index !== hbIndex) {
+              const hbStack = this.inventorySlots[hbIndex];
+              const hoveredStack = this.getSlotStack(type, index);
+
+              if (type !== 'craft-out') {
+                this.inventorySlots[hbIndex] = hoveredStack;
+                this.setSlotStack(type, index, hbStack);
+                this.buildInventoryGridUI();
+                this.buildHotbarUI();
+              }
+            }
+          }
+
+          // F Key: Hovering over an item and pressing F instantly swaps it into the player's Off-hand slot.
+          if (e.code === 'KeyF') {
+            if (type !== 'offhand' && type !== 'craft-out') {
+              const offStack = this.offhandSlot;
+              const hoveredStack = this.getSlotStack(type, index);
+              this.offhandSlot = hoveredStack;
+              this.setSlotStack(type, index, offStack);
+              this.buildInventoryGridUI();
+              this.buildHotbarUI();
+            }
+          }
+
+          // Q Key / Ctrl + Q Key: Drops a single item from the hovered stack onto the ground. Ctrl+Q drops the entire hovered stack.
+          if (e.code === 'KeyQ') {
+            if (type === 'craft-out') return; // Prevent exploits and data loss on craft output
+            const dropAll = e.ctrlKey;
+            let targetStack = this.getSlotStack(type, index);
+            if (targetStack) {
+              if (dropAll) {
+                this.spawnDroppedItem(targetStack.type, targetStack.count);
+                this.setSlotStack(type, index, null);
+              } else {
+                this.spawnDroppedItem(targetStack.type, 1);
+                targetStack.count--;
+                if (targetStack.count <= 0) this.setSlotStack(type, index, null);
+                else this.setSlotStack(type, index, targetStack);
+              }
+              this.buildInventoryGridUI();
+              this.buildHotbarUI();
+              this.updateCursorStackUI();
+            }
+          }
+        }
+      }
+
+      // Note: Pressing Q or Ctrl+Q while holding items on the cursor outside the UI boundaries drops the cursor's held items.
+      if (e.code === 'KeyQ' && this.cursorStack && (this.hoveredSlotIndex === null || (!this.isInventoryOpen && !this.isCraftingOpen))) {
+        const dropAll = e.ctrlKey;
+        if (dropAll) {
+          this.spawnDroppedItem(this.cursorStack.type, this.cursorStack.count);
+          this.cursorStack = null;
+        } else {
+          this.spawnDroppedItem(this.cursorStack.type, 1);
+          this.cursorStack.count--;
+          if (this.cursorStack.count <= 0) this.cursorStack = null;
+        }
+        this.updateCursorStackUI();
+      }
+
+
       // Reset coordinates if stuck
       if (e.code === 'KeyR') {
         this.teleportToGround();
-      }
-
-      // Eat Meat when pressing F (only when not in inventory to avoid conflict with offhand swap)
-      if (e.code === 'KeyF' && !this.isInventoryOpen && !this.isCraftingOpen) {
-        const meatCount = this.getInventoryCount(BLOCKS.MEAT);
-        if (this.playerHunger < 20 && meatCount > 0) {
-          this.consumeFromInventory(BLOCKS.MEAT, 1);
-          this.playerHunger = Math.min(20, this.playerHunger + 4);
-          this.updateStatsHUD();
-          this.buildHotbarUI();
-          this.buildInventoryGridUI();
-          if (gameAudio && gameAudio.playPlaceSound) {
-            gameAudio.playPlaceSound();
-          }
-        }
       }
 
       // Hotbar selection keys
@@ -1017,7 +1033,7 @@ class GameController {
           this.controls.unlock();
           inventoryScreen.classList.remove('hidden');
           craftingScreen.classList.add('hidden');
-          menuScreen.classList.add('hidden');
+          if (this.uiEngine && this.uiEngine.canvas) this.uiEngine.canvas.style.display = 'none';
           this.buildInventoryGridUI(); // Draw grids dynamically!
         }
       }
@@ -1032,7 +1048,7 @@ class GameController {
           this.controls.unlock();
           craftingScreen.classList.remove('hidden');
           inventoryScreen.classList.add('hidden');
-          menuScreen.classList.add('hidden');
+          if (this.uiEngine && this.uiEngine.canvas) this.uiEngine.canvas.style.display = 'none';
           this.buildCraftingUI();
         }
       }
@@ -1064,6 +1080,19 @@ class GameController {
       this.updateActiveHotbarSlot();
     });
 
+    // Global mousemove for floating cursor stack
+    window.addEventListener('mousemove', (e) => {
+      const cursorStackEl = document.getElementById('cursor-stack');
+      if (cursorStackEl) {
+        if (this.cursorStack) {
+          cursorStackEl.style.left = `${e.clientX}px`;
+          cursorStackEl.style.top = `${e.clientY}px`;
+        }
+      }
+
+      // Update dragged slots logic will go here
+    });
+
     // Clear stuck keys on window blur
     window.addEventListener('blur', () => {
       this.keys = {};
@@ -1081,6 +1110,12 @@ class GameController {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (this.rtOpaque) this.rtOpaque.setSize(w, h);
+      if (this.rtTranslucent) this.rtTranslucent.setSize(w, h);
+      if (this.rtParticles) this.rtParticles.setSize(w, h);
+      if (this.rtClouds) this.rtClouds.setSize(w, h);
     });
 
     // Mouse Clicks for Blocks
@@ -1109,7 +1144,7 @@ class GameController {
             this.controls.unlock();
             craftingScreen.classList.remove('hidden');
             inventoryScreen.classList.add('hidden');
-            menuScreen.classList.add('hidden');
+            if (this.uiEngine && this.uiEngine.canvas) this.uiEngine.canvas.style.display = 'none';
             this.buildCraftingUI();
             return;
           }
@@ -1120,6 +1155,7 @@ class GameController {
     });
 
     window.addEventListener('mouseup', (e) => {
+      this.handleMouseUp(e);
       if (e.button === 0) {
         this.isMouseDown = false;
         this.isBreaking = false;
@@ -1206,9 +1242,6 @@ class GameController {
     for (let i = 0; i < 27; i++) {
       const slotEl = document.createElement('div');
       slotEl.className = 'inv-slot';
-      if (i === this.selectedInventorySlotIndex) {
-        slotEl.classList.add('selected');
-      }
 
       const item = this.inventorySlots[i];
       if (item && item.type) {
@@ -1229,23 +1262,10 @@ class GameController {
         slotEl.appendChild(countLabel);
       }
 
-      slotEl.addEventListener('mousedown', (e) => {
-        if (e.button === 0 || e.button === 2) {
-          this.handleInventorySlotClick(i, e);
-        }
-      });
-      slotEl.addEventListener('contextmenu', e => e.preventDefault()); // Prevent browser context menu
-      slotEl.addEventListener('mouseenter', () => {
-        this.hoveredSlotArray = this.inventorySlots;
-        this.hoveredSlotIndex = i;
-        this.handleSlotDrag(this.inventorySlots, i);
-      });
-      slotEl.addEventListener('mouseleave', () => {
-        if (this.hoveredSlotArray === this.inventorySlots && this.hoveredSlotIndex === i) {
-          this.hoveredSlotArray = null;
-          this.hoveredSlotIndex = null;
-        }
-      });
+      slotEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = i; this.hoveredSlotType = 'main'; this.handleDragUpdate('main', i); });
+      slotEl.addEventListener('mouseleave', () => { if (this.hoveredSlotIndex === i) { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
+      slotEl.addEventListener('mousedown', (e) => this.handleSlotMousedown(e));
+
       grid.appendChild(slotEl);
     }
 
@@ -1256,9 +1276,6 @@ class GameController {
     for (let i = 27; i < 36; i++) {
       const slotEl = document.createElement('div');
       slotEl.className = 'inv-slot';
-      if (i === this.selectedInventorySlotIndex) {
-        slotEl.classList.add('selected');
-      }
 
       const item = this.inventorySlots[i];
       if (item && item.type) {
@@ -1279,24 +1296,49 @@ class GameController {
         slotEl.appendChild(countLabel);
       }
 
-      slotEl.addEventListener('mousedown', (e) => {
-        if (e.button === 0 || e.button === 2) {
-          this.handleInventorySlotClick(i, e);
-        }
-      });
-      slotEl.addEventListener('contextmenu', e => e.preventDefault()); // Prevent browser context menu
-      slotEl.addEventListener('mouseenter', () => {
-        this.hoveredSlotArray = this.inventorySlots;
-        this.hoveredSlotIndex = i;
-        this.handleSlotDrag(this.inventorySlots, i);
-      });
-      slotEl.addEventListener('mouseleave', () => {
-        if (this.hoveredSlotArray === this.inventorySlots && this.hoveredSlotIndex === i) {
-          this.hoveredSlotArray = null;
-          this.hoveredSlotIndex = null;
-        }
-      });
+      slotEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = i; this.hoveredSlotType = 'hotbar'; this.handleDragUpdate('hotbar', i); });
+      slotEl.addEventListener('mouseleave', () => { if (this.hoveredSlotIndex === i) { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
+      slotEl.addEventListener('mousedown', (e) => this.handleSlotMousedown(e));
+
       hotbarGrid.appendChild(slotEl);
+    }
+
+    // Handle Offhand Slot
+    const offhandSlotEl = document.getElementById('offhand-slot');
+    if (offhandSlotEl) {
+      // Clear previous icons/counts but keep the label
+      Array.from(offhandSlotEl.childNodes).forEach(node => {
+        if (!node.classList || !node.classList.contains('slot-label')) {
+          offhandSlotEl.removeChild(node);
+        }
+      });
+
+      const item = this.offhandSlot;
+      if (item && item.type) {
+        const icon = document.createElement('div');
+        icon.className = 'slot-icon';
+        const iconUrl = this.getItemIconDataURL(item.type);
+        if (iconUrl) {
+          icon.style.backgroundImage = `url(${iconUrl})`;
+          icon.style.backgroundSize = 'cover';
+        } else {
+          icon.style.background = this.getBlockColorStyle(item.type);
+        }
+        offhandSlotEl.appendChild(icon);
+
+        const countLabel = document.createElement('div');
+        countLabel.className = 'slot-count';
+        countLabel.innerText = item.count;
+        offhandSlotEl.appendChild(countLabel);
+      }
+
+      // Need to reattach listeners if re-rendered, but here it's static in HTML, just attach once or clear cleanly.
+      if (!offhandSlotEl.dataset.initialized) {
+        offhandSlotEl.dataset.initialized = 'true';
+        offhandSlotEl.addEventListener('mouseenter', () => { this.hoveredSlotIndex = 'offhand'; this.hoveredSlotType = 'offhand'; this.handleDragUpdate('offhand', 'offhand'); });
+        offhandSlotEl.addEventListener('mouseleave', () => { if (this.hoveredSlotIndex === 'offhand') { this.hoveredSlotIndex = null; this.hoveredSlotType = null; } });
+        offhandSlotEl.addEventListener('mousedown', (e) => this.handleSlotMousedown(e));
+      }
     }
 
     // Refresh 2x2 Crafting Grid drawings
@@ -1353,55 +1395,528 @@ class GameController {
     }
   }
 
-  handleCraftInputClick(i) {
-    if (this.selectedInventorySlotIndex !== null) {
-      // Swap selected inventory item with crafting input slot
-      const temp = this.inventorySlots[this.selectedInventorySlotIndex];
-      this.inventorySlots[this.selectedInventorySlotIndex] = this.inventoryCraftGrid[i];
-      this.inventoryCraftGrid[i] = temp;
-      this.selectedInventorySlotIndex = null;
+  getSlotStack(type, index) {
+    if (type === 'main' || type === 'hotbar') {
+      return this.inventorySlots[index];
+    } else if (type === 'craft-in') {
+      return this.inventoryCraftGrid[index];
+    } else if (type === 'craft-out') {
+      return this.inventoryCraftOutput;
+    } else if (type === 'offhand') {
+      return this.offhandSlot;
+    }
+    return null;
+  }
+
+  setSlotStack(type, index, stack) {
+    if (type === 'main' || type === 'hotbar') {
+      this.inventorySlots[index] = stack;
+    } else if (type === 'craft-in') {
+      this.inventoryCraftGrid[index] = stack;
+      this.check2x2Crafting();
+    } else if (type === 'craft-out') {
+      // Generally read-only, but cleared on collect
+      this.inventoryCraftOutput = stack;
+    } else if (type === 'offhand') {
+      this.offhandSlot = stack;
+    }
+  }
+
+  updateCursorStackUI() {
+    const cursorEl = document.getElementById('cursor-stack');
+    if (!cursorEl) return;
+
+    if (this.cursorStack) {
+      cursorEl.innerHTML = '';
+      cursorEl.classList.remove('hidden');
+
+      const icon = document.createElement('div');
+      icon.className = 'slot-icon';
+      const iconUrl = this.getItemIconDataURL(this.cursorStack.type);
+      if (iconUrl) {
+        icon.style.backgroundImage = `url(${iconUrl})`;
+        icon.style.backgroundSize = 'cover';
+      } else {
+        icon.style.background = this.getBlockColorStyle(this.cursorStack.type);
+      }
+      cursorEl.appendChild(icon);
+
+      const countLabel = document.createElement('div');
+      countLabel.className = 'slot-count';
+      countLabel.innerText = this.cursorStack.count;
+      cursorEl.appendChild(countLabel);
+
+      // Keep it centered on cursor
+      cursorEl.style.position = 'absolute';
+      cursorEl.style.pointerEvents = 'none';
+      cursorEl.style.zIndex = '9999';
+      cursorEl.style.width = '40px';
+      cursorEl.style.height = '40px';
+      // Pos updating handled in mousemove
     } else {
-      // Swap craft input slot item with inventory select/swap buffer
-      if (this.inventoryCraftGrid[i]) {
-        this.selectedInventorySlotIndex = null; // reset selection
-        // Simply select the craft input item and clear slot
-        // To behave exactly like swap, we find first empty inventory slot or just select it
-        // A simple direct swap is cleanest:
-        const firstEmptyIndex = this.inventorySlots.indexOf(null);
-        if (firstEmptyIndex !== -1) {
-          this.inventorySlots[firstEmptyIndex] = this.inventoryCraftGrid[i];
-          this.inventoryCraftGrid[i] = null;
+      cursorEl.classList.add('hidden');
+      cursorEl.innerHTML = '';
+    }
+  }
+
+
+  handleShiftClick(type, index) {
+    let slotStack = this.getSlotStack(type, index);
+    if (!slotStack) return;
+
+    if (type === 'craft-out') {
+      let testRemainder = this.simulateShiftFillSlots(slotStack, 27, 35);
+      if (testRemainder > 0) testRemainder = this.simulateShiftFillSlots({type: slotStack.type, count: testRemainder}, 0, 26);
+
+      if (testRemainder === 0) {
+        let remainder = this.shiftFillSlots(slotStack, 27, 35);
+        if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26);
+        this.collectCraftingOutput();
+        this.buildInventoryGridUI();
+        this.buildHotbarUI();
+      }
+      return;
+    }
+
+    let moved = false;
+    const isContainerOpen = this.isCraftingOpen;
+
+    const isEquippable = BLOCK_INFO[slotStack.type] && BLOCK_INFO[slotStack.type].maxStack === 1;
+    if (type !== 'offhand' && isEquippable) {
+      const offStack = this.offhandSlot;
+      this.offhandSlot = { type: slotStack.type, count: slotStack.count };
+      this.setSlotStack(type, index, offStack);
+      this.buildInventoryGridUI();
+      this.buildHotbarUI();
+      return;
+    }
+
+    if (type === 'craft-in') {
+      let remainder = this.shiftFillSlots(slotStack, 27, 35); // Hotbar
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
+      if (remainder === 0) {
+        this.setSlotStack(type, index, null);
+      } else {
+        slotStack.count = remainder;
+        this.setSlotStack(type, index, slotStack);
+      }
+      moved = true;
+    } else if (type === 'main') {
+      let remainder = slotStack.count;
+      if (isContainerOpen) remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35); // Hotbar
+      if (remainder === 0) {
+        this.setSlotStack(type, index, null);
+      } else {
+        slotStack.count = remainder;
+        this.setSlotStack(type, index, slotStack);
+      }
+      moved = true;
+    } else if (type === 'hotbar') {
+      let remainder = slotStack.count;
+      if (isContainerOpen) remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
+      if (remainder === 0) {
+        this.setSlotStack(type, index, null);
+      } else {
+        slotStack.count = remainder;
+        this.setSlotStack(type, index, slotStack);
+      }
+      moved = true;
+    } else if (type === 'offhand') {
+      let remainder = slotStack.count;
+      if (isContainerOpen) remainder = this.shiftFillContainer({type: slotStack.type, count: remainder});
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 27, 35); // Hotbar
+      if (remainder > 0) remainder = this.shiftFillSlots({type: slotStack.type, count: remainder}, 0, 26); // Main
+      if (remainder === 0) this.setSlotStack(type, index, null);
+      else { slotStack.count = remainder; this.setSlotStack(type, index, slotStack); }
+      moved = true;
+    }
+
+    if (moved) {
+      this.check2x2Crafting();
+      this.buildInventoryGridUI();
+      this.buildHotbarUI();
+    }
+  }
+
+  shiftFillContainer(stack) {
+    let remainder = stack.count;
+    const max = BLOCK_INFO[stack.type].maxStack || 64;
+
+    for (let i = 0; i < 4; i++) {
+      const slot = this.inventoryCraftGrid[i];
+      if (slot && slot.type === stack.type && slot.count < max) {
+        const space = max - slot.count;
+        const add = Math.min(space, remainder);
+        slot.count += add;
+        remainder -= add;
+        if (remainder <= 0) break;
+      }
+    }
+
+    if (remainder > 0) {
+      for (let i = 0; i < 4; i++) {
+        if (!this.inventoryCraftGrid[i]) {
+          const add = Math.min(max, remainder);
+          this.inventoryCraftGrid[i] = { type: stack.type, count: add };
+          remainder -= add;
+          if (remainder <= 0) break;
         }
       }
     }
-    this.check2x2Crafting();
+    return remainder;
+  }
+
+  shiftFillSlots(stack, startIndex, endIndex) {
+    let remainder = stack.count;
+    const max = BLOCK_INFO[stack.type].maxStack || 64;
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      const slot = this.inventorySlots[i];
+      if (slot && slot.type === stack.type && slot.count < max) {
+        const space = max - slot.count;
+        const add = Math.min(space, remainder);
+        slot.count += add;
+        remainder -= add;
+        if (remainder <= 0) break;
+      }
+    }
+    if (remainder > 0) {
+      for (let i = startIndex; i <= endIndex; i++) {
+        if (!this.inventorySlots[i]) {
+          const add = Math.min(max, remainder);
+          this.inventorySlots[i] = { type: stack.type, count: add };
+          remainder -= add;
+          if (remainder <= 0) break;
+        }
+      }
+    }
+    return remainder;
+  }
+
+  simulateShiftFillSlots(stack, startIndex, endIndex) {
+    let remainder = stack.count;
+    const max = BLOCK_INFO[stack.type].maxStack || 64;
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      const slot = this.inventorySlots[i];
+      if (slot && slot.type === stack.type && slot.count < max) {
+        const space = max - slot.count;
+        const add = Math.min(space, remainder);
+        remainder -= add;
+        if (remainder <= 0) break;
+      }
+    }
+    if (remainder > 0) {
+      for (let i = startIndex; i <= endIndex; i++) {
+        if (!this.inventorySlots[i]) {
+          const add = Math.min(max, remainder);
+          remainder -= add;
+          if (remainder <= 0) break;
+        }
+      }
+    }
+    return remainder;
+  }
+
+  handleSlotMousedown(e) {
+    if (this.hoveredSlotType === null || this.hoveredSlotIndex === null) return;
+
+    const type = this.hoveredSlotType;
+    const index = this.hoveredSlotIndex;
+    let slotStack = this.getSlotStack(type, index);
+
+    if (e.button === 0) { // Left Click
+      if (e.shiftKey) {
+        this.handleShiftClick(type, index);
+      } else {
+        if (!this.cursorStack) {
+          // Left-Click (On item): Pick up the entire stack.
+          if (slotStack) {
+            this.cursorStack = { type: slotStack.type, count: slotStack.count };
+
+            if (type === 'craft-out') {
+              this.collectCraftingOutput();
+            } else {
+              this.setSlotStack(type, index, null);
+            }
+
+            // Initiate Left Drag
+            this.isDraggingLeft = true;
+            this.dragStartStackCount = this.cursorStack.count;
+            this.draggedSlots = new Map();
+            this.draggedSlots.set(`${type}-${index}`, 0);
+          }
+        } else {
+          // Double Left-Click
+          if (this.lastClickTime && (Date.now() - this.lastClickTime < 250) && this.lastClickSlot === `${type}-${index}`) {
+            if (this.cursorStack) {
+               this.collectAllMatchingToCursor();
+               this.updateCursorStackUI();
+               this.buildInventoryGridUI();
+               this.buildHotbarUI();
+               return;
+            }
+          }
+
+          if (type === 'craft-out') {
+            if (slotStack && slotStack.type === this.cursorStack.type) {
+              const max = BLOCK_INFO[slotStack.type].maxStack || 64;
+              if (this.cursorStack.count + slotStack.count <= max) {
+                this.cursorStack.count += slotStack.count;
+                this.collectCraftingOutput();
+              }
+            }
+          } else if (!slotStack) {
+            // Left-Click (With held item): Place the entire stack.
+            this.setSlotStack(type, index, { type: this.cursorStack.type, count: this.cursorStack.count });
+
+            this.isDraggingLeft = true;
+            this.dragStartStackCount = this.cursorStack.count;
+            this.draggedSlots = new Map();
+            this.draggedSlots.set(`${type}-${index}`, 0);
+
+            this.cursorStack.count = 0; // Keep type reference alive for drag distribution
+          } else if (slotStack.type === this.cursorStack.type) {
+            // Merge
+            const max = BLOCK_INFO[slotStack.type].maxStack || 64;
+            const space = max - slotStack.count;
+            const add = Math.min(space, this.cursorStack.count);
+            slotStack.count += add;
+            this.cursorStack.count -= add;
+            if (this.cursorStack.count <= 0) this.cursorStack = null;
+            this.setSlotStack(type, index, slotStack);
+
+            if (this.cursorStack) {
+              this.isDraggingLeft = true;
+              this.dragStartStackCount = this.cursorStack.count;
+              this.draggedSlots = new Map();
+              this.draggedSlots.set(`${type}-${index}`, slotStack.count - add);
+            }
+          } else {
+            // Swap
+            const temp = { type: slotStack.type, count: slotStack.count };
+            this.setSlotStack(type, index, this.cursorStack);
+            this.cursorStack = temp;
+          }
+        }
+      }
+      this.lastClickTime = Date.now();
+      this.lastClickSlot = `${type}-${index}`;
+    } else if (e.button === 2) { // Right Click
+      if (!this.cursorStack) {
+        if (slotStack) {
+          if (type === 'craft-out') {
+            this.cursorStack = { type: slotStack.type, count: slotStack.count };
+            this.collectCraftingOutput();
+          } else {
+            // Right-Click (On item): Pick up exactly half the stack (round up if odd)
+            const take = Math.ceil(slotStack.count / 2);
+            this.cursorStack = { type: slotStack.type, count: take };
+            slotStack.count -= take;
+            if (slotStack.count <= 0) {
+              this.setSlotStack(type, index, null);
+            } else {
+              this.setSlotStack(type, index, slotStack);
+            }
+          }
+        }
+      } else {
+        if (type !== 'craft-out') {
+          // Right-Click (With held item): Place exactly one single item from cursor
+          if (!slotStack) {
+            this.setSlotStack(type, index, { type: this.cursorStack.type, count: 1 });
+            this.cursorStack.count -= 1;
+            if (this.cursorStack.count <= 0) this.cursorStack = null;
+
+            this.isDraggingRight = true;
+            this.draggedSlots = new Map();
+            this.draggedSlots.set(`${type}-${index}`, 0);
+          } else if (slotStack.type === this.cursorStack.type) {
+            const max = BLOCK_INFO[slotStack.type].maxStack || 64;
+            if (slotStack.count < max) {
+              slotStack.count += 1;
+              this.cursorStack.count -= 1;
+              if (this.cursorStack.count <= 0) this.cursorStack = null;
+              this.setSlotStack(type, index, slotStack);
+
+              this.isDraggingRight = true;
+              this.draggedSlots = new Map();
+              this.draggedSlots.set(`${type}-${index}`, slotStack.count - 1);
+            }
+          }
+        }
+      }
+    }
+
+    this.updateCursorStackUI();
     this.buildInventoryGridUI();
     this.buildHotbarUI();
   }
 
-  handleCraftOutputClick() {
-    if (this.inventoryCraftOutput) {
-      const type = this.inventoryCraftOutput.type;
-      const count = this.inventoryCraftOutput.count;
+  handleDragUpdate(type, index) {
+    if (!this.cursorStack) {
+      this.isDraggingLeft = false;
+      this.isDraggingRight = false;
+      return;
+    }
+    if (type === 'craft-out') return;
 
-      const success = this.addToInventory(type, count);
-      if (success) {
-        // Consume 1 from each populated input slot in the grid
-        for (let i = 0; i < 4; i++) {
-          const slot = this.inventoryCraftGrid[i];
-          if (slot) {
-            slot.count--;
-            if (slot.count <= 0) {
-              this.inventoryCraftGrid[i] = null;
-            }
-          }
+    const key = `${type}-${index}`;
+    if (this.draggedSlots.has(key)) return;
+
+    let slotStack = this.getSlotStack(type, index);
+    if (slotStack && slotStack.type !== this.cursorStack.type) return;
+
+    const max = BLOCK_INFO[this.cursorStack.type].maxStack || 64;
+
+    if (this.isDraggingRight) {
+      // Right-Click + Drag: Deposit exactly one item from the held cursor stack into every UI slot the mouse hovers over.
+      if (this.cursorStack.count > 0) {
+        if (!slotStack) {
+          this.setSlotStack(type, index, { type: this.cursorStack.type, count: 1 });
+          this.cursorStack.count--;
+          this.draggedSlots.set(key, 0);
+        } else if (slotStack.count < max) {
+          slotStack.count++;
+          this.cursorStack.count--;
+          this.setSlotStack(type, index, slotStack);
+          this.draggedSlots.set(key, slotStack.count - 1);
         }
-        gameAudio.playPlaceSound();
-        this.check2x2Crafting();
-        this.buildInventoryGridUI();
-        this.buildHotbarUI();
+        if (this.cursorStack.count <= 0) this.cursorStack = null;
+      }
+    } else if (this.isDraggingLeft) {
+      // Left-Click + Drag: Evenly divide and distribute the currently held cursor stack across all UI slots the mouse hovers over.
+      if (!this.draggedSlots.has(key)) {
+         this.draggedSlots.set(key, slotStack ? slotStack.count : 0);
+      }
+
+      const numSlots = this.draggedSlots.size;
+      let remaining = this.dragStartStackCount;
+
+      let totalCapacity = 0;
+      this.draggedSlots.forEach((originalCount) => {
+          totalCapacity += (max - originalCount);
+      });
+
+      const totalToDistribute = Math.min(this.dragStartStackCount, totalCapacity);
+      const perSlot = Math.floor(totalToDistribute / numSlots);
+      remaining -= totalToDistribute;
+
+      let itemsLeftToGive = totalToDistribute;
+
+      this.draggedSlots.forEach((originalCount, slotKey) => {
+        const [t, i] = slotKey.split('-');
+        const idx = t === 'offhand' ? 'offhand' : parseInt(i, 10);
+        let sStack = this.getSlotStack(t, idx);
+
+        if (!sStack) {
+          sStack = { type: this.cursorStack.type, count: 0 };
+        }
+
+        const space = max - originalCount;
+        let add = Math.min(perSlot, space);
+
+        sStack.count = originalCount + add;
+        itemsLeftToGive -= add;
+
+        if (sStack.count > 0) {
+          this.setSlotStack(t, idx, sStack);
+        } else {
+          this.setSlotStack(t, idx, null);
+        }
+      });
+
+      this.cursorStack.count = remaining + itemsLeftToGive;
+      if (this.cursorStack.count <= 0) this.cursorStack = null;
+    }
+
+    this.updateCursorStackUI();
+    this.buildInventoryGridUI();
+    this.buildHotbarUI();
+  }
+
+  handleMouseUp(e) {
+    if (this.isDraggingLeft) {
+      this.isDraggingLeft = false;
+      this.draggedSlots.clear();
+      if (this.cursorStack && this.cursorStack.count <= 0) {
+        this.cursorStack = null;
+        this.updateCursorStackUI();
       }
     }
+    if (this.isDraggingRight) {
+      this.isDraggingRight = false;
+      this.draggedSlots.clear();
+      if (this.cursorStack && this.cursorStack.count <= 0) {
+        this.cursorStack = null;
+        this.updateCursorStackUI();
+      }
+    }
+  }
+
+  collectAllMatchingToCursor() {
+
+    if (!this.cursorStack) return;
+    const max = BLOCK_INFO[this.cursorStack.type].maxStack || 64;
+
+    // Search main and hotbar slots
+    for (let i = 0; i < 36; i++) {
+      if (this.cursorStack.count >= max) break;
+      const slot = this.inventorySlots[i];
+      if (slot && slot.type === this.cursorStack.type) {
+        const needed = max - this.cursorStack.count;
+        const take = Math.min(needed, slot.count);
+        this.cursorStack.count += take;
+        slot.count -= take;
+        if (slot.count <= 0) this.inventorySlots[i] = null;
+      }
+    }
+
+    // Search crafting grid (container) slots
+    for (let i = 0; i < 4; i++) {
+      if (this.cursorStack.count >= max) break;
+      const slot = this.inventoryCraftGrid[i];
+      if (slot && slot.type === this.cursorStack.type) {
+        const needed = max - this.cursorStack.count;
+        const take = Math.min(needed, slot.count);
+        this.cursorStack.count += take;
+        slot.count -= take;
+        if (slot.count <= 0) {
+          this.inventoryCraftGrid[i] = null;
+        }
+      }
+    }
+
+    // Search offhand slot
+    if (this.cursorStack.count < max) {
+      const slot = this.offhandSlot;
+      if (slot && slot.type === this.cursorStack.type) {
+        const needed = max - this.cursorStack.count;
+        const take = Math.min(needed, slot.count);
+        this.cursorStack.count += take;
+        slot.count -= take;
+        if (slot.count <= 0) this.offhandSlot = null;
+      }
+    }
+
+    this.check2x2Crafting();
+  }
+
+  collectCraftingOutput() {
+    // Consume 1 from each populated input slot in the grid
+    for (let i = 0; i < 4; i++) {
+      const slot = this.inventoryCraftGrid[i];
+      if (slot) {
+        slot.count--;
+        if (slot.count <= 0) {
+          this.inventoryCraftGrid[i] = null;
+        }
+      }
+    }
+    gameAudio.playPlaceSound();
+    this.check2x2Crafting();
   }
 
   check2x2Crafting() {
@@ -1440,268 +1955,6 @@ class GameController {
     this.inventoryCraftOutput = null;
   }
 
-  handleSlotInteraction(slotArray, index, e) {
-    const isShift = e.shiftKey;
-    const isRightClick = e.button === 2;
-    const isLeftClick = e.button === 0;
-
-    // Double click logic
-    if (isLeftClick && !isShift && this.cursorStack) {
-      const now = Date.now();
-      if (this.lastSlotClickTime && (now - this.lastSlotClickTime) < 300 && this.lastSlotClickedIndex === index && this.lastSlotClickedArray === slotArray) {
-        // Double click: pull all matching items
-        let space = this.getMaxStackSize(this.cursorStack.type) - this.cursorStack.count;
-        if (space > 0) {
-           const allArrays = [this.inventorySlots, this.inventoryCraftGrid];
-           for (const arr of allArrays) {
-             for (let i=0; i<arr.length; i++) {
-               if (arr[i] && arr[i].type === this.cursorStack.type && arr[i] !== this.cursorStack) {
-                 const take = Math.min(space, arr[i].count);
-                 arr[i].count -= take;
-                 this.cursorStack.count += take;
-                 space -= take;
-                 if (arr[i].count <= 0) arr[i] = null;
-                 if (space <= 0) break;
-               }
-             }
-             if (space <= 0) break;
-           }
-           this.check2x2Crafting();
-           this.buildInventoryGridUI();
-           this.buildHotbarUI();
-        }
-        this.lastSlotClickTime = 0;
-        return;
-      }
-      this.lastSlotClickTime = now;
-      this.lastSlotClickedIndex = index;
-      this.lastSlotClickedArray = slotArray;
-    }
-
-    const slot = slotArray[index];
-
-    if (isShift && isLeftClick) {
-      if (slot) {
-        // Shift click routing
-        const type = slot.type;
-        const count = slot.count;
-        let remainder = count;
-
-        // Routing logic:
-        // Hotbar (27-35) -> Main Inventory (0-26)
-        // Main Inventory (0-26) -> Hotbar (27-35)
-        // Craft Grid (0-3) -> Hotbar then Main
-
-        let targetRanges = [];
-        if (slotArray === this.inventorySlots) {
-          if (index >= 27) { // Hotbar -> Main
-            targetRanges = [[0, 26]];
-          } else { // Main -> Hotbar
-            targetRanges = [[27, 35]];
-          }
-        } else if (slotArray === this.inventoryCraftGrid) {
-          targetRanges = [[27, 35], [0, 26]];
-        }
-
-        for (const range of targetRanges) {
-          if (remainder <= 0) break;
-          // 1. Fill existing stacks
-          for (let i = range[0]; i <= range[1]; i++) {
-            const targetSlot = this.inventorySlots[i];
-            if (targetSlot && targetSlot.type === type) {
-              const max = this.getMaxStackSize(type);
-              if (targetSlot.count < max) {
-                const space = max - targetSlot.count;
-                const add = Math.min(space, remainder);
-                targetSlot.count += add;
-                remainder -= add;
-                if (remainder <= 0) break;
-              }
-            }
-          }
-          if (remainder <= 0) break;
-          // 2. Fill empty slots
-          for (let i = range[0]; i <= range[1]; i++) {
-            if (!this.inventorySlots[i]) {
-              const max = this.getMaxStackSize(type);
-              const add = Math.min(max, remainder);
-              this.inventorySlots[i] = { type, count: add };
-              remainder -= add;
-              if (remainder <= 0) break;
-            }
-          }
-        }
-
-        if (remainder > 0) {
-          slot.count = remainder;
-        } else {
-          slotArray[index] = null;
-        }
-      }
-    } else if (isLeftClick) {
-      if (this.cursorStack && slot) {
-        if (this.cursorStack.type === slot.type) {
-           // Stack items
-           const max = this.getMaxStackSize(this.cursorStack.type);
-           const space = max - slot.count;
-           const add = Math.min(space, this.cursorStack.count);
-           slot.count += add;
-           this.cursorStack.count -= add;
-           if (this.cursorStack.count <= 0) this.cursorStack = null;
-        } else {
-           // Swap items
-           const temp = slot;
-           slotArray[index] = this.cursorStack;
-           this.cursorStack = temp;
-        }
-      } else if (this.cursorStack && !slot) {
-        // Place stack
-        slotArray[index] = this.cursorStack;
-        this.cursorStack = null;
-      } else if (!this.cursorStack && slot) {
-        // Pickup stack
-        this.cursorStack = slot;
-        slotArray[index] = null;
-      }
-    } else if (isRightClick) {
-      if (!this.cursorStack && slot) {
-        // Pick up half
-        const half = Math.ceil(slot.count / 2);
-        this.cursorStack = { type: slot.type, count: half };
-        slot.count -= half;
-        if (slot.count <= 0) slotArray[index] = null;
-      } else if (this.cursorStack && !slot) {
-        // Place one
-        slotArray[index] = { type: this.cursorStack.type, count: 1 };
-        this.cursorStack.count -= 1;
-        if (this.cursorStack.count <= 0) this.cursorStack = null;
-      } else if (this.cursorStack && slot && this.cursorStack.type === slot.type) {
-        // Add one
-        const max = this.getMaxStackSize(slot.type);
-        if (slot.count < max) {
-          slot.count += 1;
-          this.cursorStack.count -= 1;
-          if (this.cursorStack.count <= 0) this.cursorStack = null;
-        }
-      } else if (this.cursorStack && slot && this.cursorStack.type !== slot.type) {
-        // Swap items on right click if different (standard behavior)
-        const temp = slot;
-        slotArray[index] = this.cursorStack;
-        this.cursorStack = temp;
-      }
-    }
-
-    this.check2x2Crafting();
-    this.buildInventoryGridUI();
-    this.buildHotbarUI();
-
-    // Update cursor position manually to prevent flicker
-    const eCopy = e;
-    requestAnimationFrame(() => {
-       const cursorItemEl = document.getElementById('cursor-item');
-       if (cursorItemEl) {
-          cursorItemEl.style.left = `${eCopy.clientX + 10}px`;
-          cursorItemEl.style.top = `${eCopy.clientY + 10}px`;
-       }
-    });
-  }
-
-  handleSlotDrag(slotArray, index) {
-    if (!this.dragMode || !this.cursorStack) return;
-
-    // Use a composite key so we don't count the same slot twice
-    const slotKey = `${slotArray === this.inventorySlots ? 'inv' : 'craft'}-${index}`;
-    if (this.dragSlots.has(slotKey)) return;
-
-    this.dragSlots.add(slotKey);
-
-    const numSlots = this.dragSlots.size;
-    const type = this.cursorStack.type;
-    const maxStack = this.getMaxStackSize(type);
-
-    if (this.dragMode === 'left') {
-      // Evenly distribute
-      const amountPerSlot = Math.floor(this.dragInitialCount / numSlots);
-      if (amountPerSlot > 0) {
-        let placedTotal = 0;
-
-        // Reset all dragged slots to their state before drag started
-        // Actually, a perfect Minecraft replica only places in empty/matching slots.
-        // For simplicity, we just distribute to matching/empty slots.
-
-        // Properly distribute to slots
-        // First, revert the slots to their initial pre-drag state
-        // We actually didn't store pre-drag state of individual slots, which is an oversight.
-        // But since this is a simplified clone, we can just track original counts.
-
-        // Wait, to prevent duplicating, let's keep it simple:
-        // We will just clear all dragged slots (if they match the type), and redistribute exactly `amountPerSlot`
-        // plus any original items they had.
-        // A robust way: track original counts in `this.dragOriginalCounts` map when a slot is added.
-
-        // Let's initialize `this.dragOriginalCounts` if it doesn't exist
-        if (!this.dragOriginalCounts) {
-          this.dragOriginalCounts = new Map();
-        }
-
-        // Store the original count of the newly added slot
-        const currentSlot = slotArray[index];
-        if (currentSlot && currentSlot.type === type) {
-          this.dragOriginalCounts.set(slotKey, currentSlot.count);
-        } else if (!currentSlot) {
-          this.dragOriginalCounts.set(slotKey, 0);
-        } else {
-          // Different type, ignore this slot for distribution
-          this.dragSlots.delete(slotKey);
-          return;
-        }
-
-        // Recalculate numSlots based on valid matching/empty slots
-        const validSlots = Array.from(this.dragSlots).filter(k => this.dragOriginalCounts.has(k));
-        const newNumSlots = validSlots.length;
-        const newAmountPerSlot = Math.floor(this.dragInitialCount / newNumSlots);
-
-        let used = 0;
-        validSlots.forEach(key => {
-            const arr = key.startsWith('inv') ? this.inventorySlots : this.inventoryCraftGrid;
-            const idx = parseInt(key.split('-')[1]);
-            const originalCount = this.dragOriginalCounts.get(key);
-
-            const toAdd = Math.min(newAmountPerSlot, maxStack - originalCount);
-
-            arr[idx] = { type: type, count: originalCount + toAdd };
-            used += toAdd;
-        });
-
-        this.cursorStack.count = this.dragInitialCount - used;
-        if (this.cursorStack.count <= 0) this.cursorStack = null;
-
-      }
-    } else if (this.dragMode === 'right') {
-      // Deposit one per slot
-      if (this.cursorStack.count > 0) {
-        const slot = slotArray[index];
-        if (!slot) {
-          slotArray[index] = { type: type, count: 1 };
-          this.cursorStack.count -= 1;
-        } else if (slot.type === type && slot.count < maxStack) {
-          slot.count += 1;
-          this.cursorStack.count -= 1;
-        }
-
-        if (this.cursorStack.count <= 0) this.cursorStack = null;
-      }
-    }
-
-    this.check2x2Crafting();
-    this.buildInventoryGridUI();
-    this.buildHotbarUI();
-  }
-
-  handleInventorySlotClick(index, e) {
-    this.handleSlotInteraction(this.inventorySlots, index, e);
-    this.updateActiveHotbarSlot();
-  }
 
   buildCraftingUI() {
     const listContainer = document.getElementById('craft-list');
@@ -1808,15 +2061,6 @@ class GameController {
     }
   }
 
-  getMaxStackSize(type) {
-    // Unstackable
-    if (type === BLOCKS.STONE_PICKAXE) return 1;
-    // Limited stacking items
-    // (None explicitly added yet beyond standard blocks, but this is where Eggs/Snowballs/EnderPearls would go)
-    // Standard Blocks
-    return 64;
-  }
-
   getItemIconDataURL(type) {
     if (this.iconDataUrlCache[type]) {
       return this.iconDataUrlCache[type];
@@ -1882,7 +2126,7 @@ class GameController {
 
   addToInventory(type, count = 1) {
     let remainder = count;
-    const maxStack = this.getMaxStackSize(type);
+    const maxStack = BLOCK_INFO[type].maxStack || 64;
 
     // 1. Try to find existing stack of same type with space (< maxStack)
     for (let i = 0; i < 36; i++) {
@@ -1895,7 +2139,6 @@ class GameController {
         if (remainder <= 0) break;
       }
     }
-
     // 2. Try to fill empty slots
     if (remainder > 0) {
       const slotsOrder = [...Array(9).keys()].map(x => x + 27).concat([...Array(27).keys()]);
@@ -2135,6 +2378,7 @@ class GameController {
         this.scene.remove(oldLight);
       }
       const pointLight = new THREE.PointLight(0xffaa55, 1.0, 15);
+      pointLight.layers.enableAll();
       pointLight.position.set(px + 0.5, py + 0.5, pz + 0.5);
       this.scene.add(pointLight);
       this.torchLights.push(pointLight);
@@ -2231,6 +2475,28 @@ class GameController {
     ctx.fillRect(width/2 - 2, height/2 - 2, 4, 4);
   }
 
+
+  spawnDroppedItem(type, count) {
+    if (this.entityManager && count > 0) {
+      // Spawn items slightly in front of player
+      const px = this.physics.position.x;
+      const py = this.physics.position.y + 1.5;
+      const pz = this.physics.position.z;
+
+      const dir = new THREE.Vector3();
+      this.camera.getWorldDirection(dir);
+
+      for(let i=0; i<Math.min(count, 5); i++) { // cap visuals to 5 for performance
+        this.entityManager.spawnCollectible(
+          type,
+          px + dir.x * 1.5,
+          py + dir.y * 1.5,
+          pz + dir.z * 1.5
+        );
+      }
+    }
+  }
+
   spawnParticles(x, y, z, blockType) {
     const count = 12;
     const color = this.getBlockParticleColor(blockType);
@@ -2251,6 +2517,7 @@ class GameController {
           continue; // Cap max active particles
         }
         pMesh = new THREE.Mesh(this.sharedParticleGeometry, mat);
+        pMesh.layers.set(2); // OIT Particles Layer
         this.scene.add(pMesh);
       }
 
@@ -2424,7 +2691,10 @@ class GameController {
     this.fpsFrames++;
     const now = performance.now();
     if (now - this.fpsLastUpdate >= 1000) {
-      document.getElementById('fps-counter').innerText = this.fpsFrames;
+      const fpsCounter = document.getElementById('fps-counter');
+      if (fpsCounter) {
+        fpsCounter.innerText = this.fpsFrames;
+      }
       this.fpsFrames = 0;
       this.fpsLastUpdate = now;
     }
@@ -2442,8 +2712,13 @@ class GameController {
       this.camera.getWorldDirection(this.camDirCache);
 
       if (this.playerHealth > 0) {
-        // 1. Run physics update
-        this.physics.update(dt, this.keys, this.camDirCache, this.world);
+        // Fixed 20 TPS physics tick accumulator
+        if (this.physicsAccumulator === undefined) this.physicsAccumulator = 0;
+        this.physicsAccumulator += dt;
+        while (this.physicsAccumulator >= 0.05) {
+          this.physics.update(0.05, this.keys, this.camDirCache, this.world);
+          this.physicsAccumulator -= 0.05;
+        }
 
         // Handle Fall Damage
         if (this.physics.lastFallDamage > 0) {
@@ -2528,7 +2803,7 @@ class GameController {
           const px = this.physics.position.x.toFixed(1);
           const py = this.physics.position.y.toFixed(1);
           const pz = this.physics.position.z.toFixed(1);
-          document.getElementById('player-pos').innerText = `${px}, ${py}, ${pz}`;
+
 
           const oxBar = document.getElementById('oxygen-bar-container');
           if (oxBar) {
@@ -2549,7 +2824,7 @@ class GameController {
           this.minimapUpdateTimer += dt;
           if (this.minimapUpdateTimer >= 0.5) { // 2 FPS map updates
             this.minimapUpdateTimer = 0;
-            this.updateMinimap();
+            // this.updateMinimap();
           }
         }
 
@@ -2575,7 +2850,50 @@ class GameController {
       this.world.updateWater(dt);
     }
 
+    // --- Order-Independent Transparency (OIT) Multi-Pass Rendering ---
+
+    // Save current clear color/alpha and camera layers
+    const oldClearColor = new THREE.Color();
+    this.renderer.getClearColor(oldClearColor);
+    const oldClearAlpha = this.renderer.getClearAlpha();
+    const oldLayers = this.camera.layers.mask;
+
+    // 1. Opaque Pass (Layer 0)
+    this.camera.layers.set(0);
+    this.renderer.setRenderTarget(this.rtOpaque);
+    this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
+
+    // Prepare clear state for transparent passes (Transparent Black, DO NOT clear depth!)
+    this.renderer.setClearColor(0x000000, 0.0);
+
+    // 2. Translucent Pass (Water/Glass, Layer 1)
+    this.camera.layers.set(1);
+    this.renderer.setRenderTarget(this.rtTranslucent);
+    // Clear color and depth since this target has its own independent depth texture
+    this.renderer.clear(true, true, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 3. Particles Pass (Layer 2)
+    this.camera.layers.set(2);
+    this.renderer.setRenderTarget(this.rtParticles);
+    this.renderer.clear(true, true, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 4. Clouds Pass (Layer 3)
+    this.camera.layers.set(3);
+    this.renderer.setRenderTarget(this.rtClouds);
+    this.renderer.clear(true, true, false);
+    this.renderer.render(this.scene, this.camera);
+
+    // 5. Compositing Pass to Screen
+    this.renderer.setRenderTarget(null); // Default screen buffer
+    this.renderer.setClearColor(oldClearColor, oldClearAlpha);
+    this.renderer.clear();
+    this.renderer.render(this.oitScene, this.oitCamera);
+
+    // Restore camera state
+    this.camera.layers.mask = oldLayers;
   }
 
 }

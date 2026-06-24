@@ -1,7 +1,8 @@
 // Web Worker for offloading chunk terrain generation and geometry construction.
 // This runs on a separate CPU core to prevent main thread stutters.
 
-import { noiseGen, getTerrainHeight, getTerrainHeightAndWater } from './noise.js';
+import { noiseGen, getTerrainHeight, getTerrainHeightAndWater, BiomePipeline, BIOMES, BiomeColorProvider } from './noise.js';
+import { TerrainGenerator } from './terrain_generator.js';
 
 // Block definition mappings (must match world.js)
 const BLOCKS = {
@@ -28,7 +29,18 @@ const BLOCKS = {
   WOOL: 20,
   TORCH: 21,
   TNT: 22,
-  COAL: 23
+  COAL: 23,
+  ICE: 24,
+  SLIME: 25,
+  COBWEB: 26,
+  SOUL_SAND: 27,
+  MAGMA_BLOCK: 28,
+  MYCELIUM: 29,
+  SANDSTONE: 30,
+  SNOW_LAYER: 31,
+  EMERALD_ORE: 32,
+  MONSTER_EGG: 33,
+  CACTUS: 34
 };
 
 const BLOCK_INFO = {
@@ -95,6 +107,9 @@ function getBlock(x, y, z) {
   };
 }
 
+
+let generatorInstance = null;
+
 function generateChunkData(cx, cz, savedBlocks = null) {
   const blocks = Array(CHUNK_SIZE).fill(null).map(() =>
     Array(CHUNK_HEIGHT).fill(null).map(() =>
@@ -102,152 +117,23 @@ function generateChunkData(cx, cz, savedBlocks = null) {
     )
   );
 
-    const chunkWorldX = cx * CHUNK_SIZE;
-    const chunkWorldZ = cz * CHUNK_SIZE;
+  if (!generatorInstance) {
+      generatorInstance = new TerrainGenerator(1337);
+  }
 
-    // Pass 1: Base Terrain
-    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+  const flatBlocks = generatorInstance.generateBaseTerrain(cx, cz);
+
+  for (let lx = 0; lx < CHUNK_SIZE; lx++) {
       for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-        const worldX = chunkWorldX + lx;
-        const worldZ = chunkWorldZ + lz;
-
-        const info = getTerrainHeightAndWater(worldX, worldZ);
-        const height = info.height;
-        const waterLevel = info.waterLevel;
-        const isPool = info.isPool;
-
-        for (let y = 0; y < CHUNK_HEIGHT; y++) {
-          if (y === 0) {
-            blocks[lx][y][lz] = BLOCKS.BEDROCK;
-          } else if (y < height - 4) {
-            blocks[lx][y][lz] = BLOCKS.STONE;
-            // Coal ore generation
-            if (y > 2 && y < 25 && Math.random() < 0.03) {
-              blocks[lx][y][lz] = BLOCKS.COAL;
-            }
-          } else if (y < height) {
-            blocks[lx][y][lz] = BLOCKS.DIRT;
-          } else if (y === height) {
-            if (isPool) {
-              blocks[lx][y][lz] = BLOCKS.SAND;
-            } else {
-              blocks[lx][y][lz] = BLOCKS.GRASS;
-            }
-          } else if (y > height && y <= waterLevel) {
-            blocks[lx][y][lz] = BLOCKS.WATER;
-          } else {
-            blocks[lx][y][lz] = BLOCKS.AIR;
+          for (let ly = 0; ly < CHUNK_HEIGHT; ly++) {
+              blocks[lx][ly][lz] = flatBlocks[lx + lz * 16 + ly * 256];
           }
-        }
       }
-    }
+  }
 
-    // Pass 2: Tree generation (after all base terrain columns are defined to prevent leaf overwrites)
-    for (let lx = 3; lx < CHUNK_SIZE - 3; lx++) {
-      for (let lz = 3; lz < CHUNK_SIZE - 3; lz++) {
-        const worldX = chunkWorldX + lx;
-        const worldZ = chunkWorldZ + lz;
-        const height = getTerrainHeight(worldX, worldZ);
-
-        // Only grow trees on Grass blocks (not sand, water or stone)
-        if (blocks[lx][height][lz] === BLOCKS.GRASS) {
-          const treeNoise = noiseGen.noise(worldX * 0.5, worldZ * 0.5);
-          if (treeNoise > 0.42 && Math.random() > 0.78) {
-            const r = Math.random();
-            if (r < 0.4) {
-              // Classic Minecraft Oak Tree (5x5 bottom layers, 3x3 top layer, cross on top)
-              const treeHeight = 5 + Math.floor(Math.random() * 2);
-              for (let ty = 1; ty <= treeHeight; ty++) {
-                blocks[lx][height + ty][lz] = BLOCKS.WOOD;
-              }
-              const trunkY = height + treeHeight;
-
-              // Bottom foliage layer (y = trunkY - 2 and trunkY - 1)
-              for (let oy = -2; oy <= -1; oy++) {
-                for (let ox = -2; ox <= 2; ox++) {
-                  for (let oz = -2; oz <= 2; oz++) {
-                    // Skip corners for rounder canopy
-                    if (Math.abs(ox) === 2 && Math.abs(oz) === 2) continue;
-                    blocks[lx + ox][trunkY + oy][lz + oz] = BLOCKS.LEAVES;
-                  }
-                }
-              }
-              // Middle foliage layer (y = trunkY)
-              for (let ox = -1; ox <= 1; ox++) {
-                for (let oz = -1; oz <= 1; oz++) {
-                  blocks[lx + ox][trunkY][lz + oz] = BLOCKS.LEAVES;
-                }
-              }
-              // Top foliage layer (y = trunkY + 1)
-              blocks[lx][trunkY + 1][lz] = BLOCKS.LEAVES;
-              blocks[lx + 1][trunkY + 1][lz] = BLOCKS.LEAVES;
-              blocks[lx - 1][trunkY + 1][lz] = BLOCKS.LEAVES;
-              blocks[lx][trunkY + 1][lz + 1] = BLOCKS.LEAVES;
-              blocks[lx][trunkY + 1][lz - 1] = BLOCKS.LEAVES;
-
-            } else if (r < 0.7) {
-              // Classic Minecraft Pine/Spruce Tree (Conical segmented layers)
-              const treeHeight = 7 + Math.floor(Math.random() * 3);
-              for (let ty = 1; ty <= treeHeight; ty++) {
-                blocks[lx][height + ty][lz] = BLOCKS.PINE_WOOD;
-              }
-              const trunkY = height + treeHeight;
-
-              // Cone foliage generation
-              for (let oy = -4; oy <= 1; oy++) {
-                const currentY = trunkY + oy;
-                const distFromTop = 1 - oy;
-                let radius = 0;
-
-                if (distFromTop === 0) {
-                  radius = 0; // Single block top
-                } else if (distFromTop === 1 || distFromTop === 3) {
-                  radius = 1; // 3x3 cross
-                } else {
-                  radius = 2; // 5x5 cross
-                }
-
-                for (let ox = -radius; ox <= radius; ox++) {
-                  for (let oz = -radius; oz <= radius; oz++) {
-                    if (radius === 2 && Math.abs(ox) === 2 && Math.abs(oz) === 2) continue; // Cut corners
-                    if (radius === 1 && Math.abs(ox) === 1 && Math.abs(oz) === 1 && distFromTop === 1) continue; // Taper top
-                    blocks[lx + ox][currentY][lz + oz] = BLOCKS.PINE_LEAVES;
-                  }
-                }
-              }
-            } else {
-              // Classic Minecraft Birch Tree (Tall trunk, light green dense canopy)
-              const treeHeight = 6 + Math.floor(Math.random() * 2);
-              for (let ty = 1; ty <= treeHeight; ty++) {
-                blocks[lx][height + ty][lz] = BLOCKS.BIRCH_WOOD;
-              }
-              const trunkY = height + treeHeight;
-
-              // Birch foliage is standard but slightly more vertical
-              for (let oy = -2; oy <= 0; oy++) {
-                for (let ox = -2; ox <= 2; ox++) {
-                  for (let oz = -2; oz <= 2; oz++) {
-                    if (Math.abs(ox) === 2 && Math.abs(oz) === 2 && oy === 0) continue;
-                    blocks[lx + ox][trunkY + oy][lz + oz] = BLOCKS.BIRCH_LEAVES;
-                  }
-                }
-              }
-              // Top cap
-              for (let ox = -1; ox <= 1; ox++) {
-                for (let oz = -1; oz <= 1; oz++) {
-                  if (Math.abs(ox) === 1 && Math.abs(oz) === 1) continue;
-                  blocks[lx + ox][trunkY + 1][lz + oz] = BLOCKS.BIRCH_LEAVES;
-                }
-              }
-              blocks[lx][trunkY + 2][lz] = BLOCKS.BIRCH_LEAVES;
-            }
-          }
-        }
-      }
-    }
-  if (savedBlocks) {
+  if (savedBlocks && savedBlocks.length > 0) {
     savedBlocks.forEach(b => {
-      blocks[b.x][b.y][b.z] = b.type;
+        blocks[b.x][b.y][b.z] = b.type;
     });
   }
 

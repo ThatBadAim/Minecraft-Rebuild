@@ -1,1 +1,6 @@
 node_modules/
+
+# VoxelEngine Outputs
+VoxelEngine/**/bin/
+VoxelEngine/**/obj/
+VoxelEngine/.vs/

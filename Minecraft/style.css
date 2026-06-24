@@ -108,15 +108,12 @@ body, html {
 
 #active-item-name {
   font-family: var(--font-retro);
-  font-size: 10px;
+  font-size: 12px;
   text-shadow: 2px 2px 0px #000;
-  letter-spacing: 1px;
   color: #fff;
   opacity: 0;
   transition: opacity var(--transition-speed);
-  background: rgba(0, 0, 0, 0.4);
-  padding: 6px 12px;
-  border-radius: 4px;
+  margin-bottom: 8px;
   pointer-events: none;
 }
 
@@ -127,52 +124,63 @@ body, html {
 /* Hotbar */
 #hotbar {
   display: flex;
-  background: var(--bg-dark);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-color);
-  padding: 6px;
-  border-radius: 12px;
-  gap: 6px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  background: rgba(139, 139, 139, 0.5); /* semi-transparent gray like bedrock or solid */
+  border: 2px solid #000;
+  border-top-color: #777;
+  border-left-color: #777;
+  border-bottom-color: #555;
+  border-right-color: #555;
+  padding: 2px;
+  gap: 0; /* contiguous */
   pointer-events: auto;
+  image-rendering: pixelated;
 }
 
 .hotbar-slot {
-  width: 52px;
-  height: 52px;
-  border-radius: 8px;
-  background: var(--bg-light);
-  border: 2px solid transparent;
+  width: 40px;
+  height: 40px;
+  background: #8b8b8b;
+  border-right: 2px solid #373737;
+  border-bottom: 2px solid #373737;
+  border-top: 2px solid #b8b8b8;
+  border-left: 2px solid #b8b8b8;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  image-rendering: pixelated;
 }
 
-.hotbar-slot:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.3);
-}
+
 
 .hotbar-slot.active {
-  background: rgba(79, 70, 229, 0.2);
-  border-color: var(--accent-color);
-  box-shadow: 0 0 12px var(--accent-glow);
+  border: 2px solid #fff;
+  outline: 2px solid #000;
+  outline-offset: -4px;
+  z-index: 2;
 }
 
 .slot-num {
   position: absolute;
-  top: 4px;
-  left: 6px;
-  font-size: 9px;
+  top: 2px;
+  left: 2px;
+  font-size: 10px;
   font-family: var(--font-retro);
-  color: var(--text-muted);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
 }
 
 .hotbar-slot.active .slot-num {
-  color: #a5b4fc;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 10px;
+  font-family: var(--font-retro);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
 }
 
 .slot-icon {
@@ -420,9 +428,9 @@ body, html {
 /* Slot Counts & Crafting Styles */
 .slot-count {
   position: absolute;
-  bottom: 4px;
-  right: 6px;
-  font-size: 9px;
+  bottom: 2px;
+  right: 2px;
+  font-size: 10px;
   font-family: var(--font-retro);
   color: #fff;
   text-shadow: 1px 1px 0px #000;
@@ -516,21 +524,17 @@ body, html {
 #stats-hud-container {
   display: flex;
   justify-content: space-between;
-  width: 480px;
-  margin-bottom: 6px;
+  width: 364px; /* match standard hotbar width approx */
+  margin-bottom: 2px;
   pointer-events: auto;
+  align-items: flex-end;
 }
 
 #hearts-row, #hunger-row {
   display: flex;
-  gap: 3px;
-  background: rgba(0, 0, 0, 0.45);
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  gap: 0px;
 }
+
 
 .hud-icon {
   width: 14px;
@@ -567,108 +571,7 @@ body, html {
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.6) !important;
 }
 
-/* Minecraft UI Overhaul - Retro Blocky Options Menu */
-.mc-panel {
-  background-color: #2e2e2e;
-  border: 4px solid #181818;
-  outline: 4px solid #4a4a4a;
-  outline-offset: -8px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-  image-rendering: pixelated;
-}
-
-.mc-option {
-  background-color: #4e4e4e;
-  border: 2px solid;
-  border-color: #7c7c7c #262626 #262626 #7c7c7c; /* 3D bevel look */
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  color: #fff;
-  font-family: var(--font-retro);
-  font-size: 8px;
-  line-height: 1;
-}
-
-.mc-option-label {
-  display: flex;
-  justify-content: space-between;
-  text-shadow: 1px 1px 0px #000;
-  margin-bottom: 6px;
-  letter-spacing: 0.5px;
-}
-
-/* Minecraft Sliders Track & Handle */
-.mc-option input[type="range"] {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 4px;
-  background: #121212;
-  border: 1px solid #5a5a5a;
-  outline: none;
-  margin: 4px 0;
-  border-radius: 0;
-}
-
-.mc-option input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 18px;
-  background: #5c5c5c;
-  border: 2px solid;
-  border-color: #8c8c8c #373737 #373737 #8c8c8c;
-  cursor: pointer;
-  border-radius: 0;
-}
-
-.mc-option input[type="range"]::-webkit-slider-thumb:hover {
-  background: #7c7c7c;
-  border-color: #acacac #4a4a4a #4a4a4a #acacac;
-}
-
-/* Key binding styling */
-.key-cap-mc {
-  background: #1a1a1a;
-  border: 1px solid #4a4a4a;
-  padding: 2px 6px;
-  font-family: var(--font-retro);
-  font-size: 8px;
-  color: #facc15;
-  text-align: center;
-  text-shadow: none;
-}
-
-/* Minecraft-style Grey Beveled Button */
-.btn-mc {
-  background-color: #4e4e4e;
-  border: 2px solid;
-  border-color: #7c7c7c #262626 #262626 #7c7c7c;
-  color: #e0e0e0;
-  font-family: var(--font-retro);
-  font-size: 11px;
-  font-weight: normal;
-  padding: 8px 16px;
-  cursor: pointer;
-  text-align: center;
-  text-shadow: 1px 1px 0px #000;
-  transition: none;
-  border-radius: 0;
-}
-
-.btn-mc:hover {
-  background-color: #5c5c5c;
-  border-color: #8c8c8c #373737 #373737 #8c8c8c;
-  color: #ffffa0; /* Minecraft yellow text hover */
-}
-
-.btn-mc:active {
-  background-color: #383838;
-  border-color: #1c1c1c #525252 #525252 #1c1c1c;
-  color: #aaa;
-}
-
 /* ====================== */
-/* Loading Screen         */
 /* ====================== */
 #loading-screen {
   position: fixed;
@@ -849,4 +752,256 @@ body, html {
 @keyframes oxygenPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+/* Cursor Stack Element */
+#cursor-stack {
+  position: absolute;
+  pointer-events: none;
+  z-index: 9999;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%); /* Center on cursor */
+}
+
+#cursor-stack .slot-icon {
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+}
+
+#cursor-stack .slot-count {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  font-size: 10px;
+  font-family: var(--font-retro);
+  color: #fff;
+  text-shadow: 1px 1px 0px #000;
+  pointer-events: none;
+}
+
+
+
+.options-overlay {
+  background: rgba(0, 0, 0, 0.7) !important; /* semi-transparent black overlay */
+}
+
+.options-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.options-panel h2 {
+  font-family: var(--font-retro);
+  font-size: 16px;
+  color: #fff;
+  text-shadow: 2px 2px 0px #000;
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  width: 600px;
+  margin-bottom: 12px;
+}
+
+.options-sub-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 600px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.btn-mc {
+  background-color: #7b7b7b;
+  border: 2px solid #000;
+  border-top-color: #a8a8a8;
+  border-left-color: #a8a8a8;
+  border-bottom-color: #585858;
+  border-right-color: #585858;
+  color: #e0e0e0;
+  font-family: var(--font-retro);
+  font-size: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  text-align: center;
+  text-shadow: 2px 2px 0px #3f3f3f;
+  border-radius: 0;
+  width: 292px; /* Half width of grid approx */
+  position: relative;
+  box-sizing: border-box;
+}
+
+.btn-mc.wide {
+  width: 300px;
+}
+
+.btn-mc.done-btn {
+  width: 200px;
+}
+
+.btn-mc:hover {
+  background-color: #8b8b8b;
+  border-top-color: #b8b8b8;
+  border-left-color: #b8b8b8;
+  border-bottom-color: #686868;
+  border-right-color: #686868;
+  color: #ffffa0;
+  text-shadow: 2px 2px 0px #3f3f3f;
+}
+
+.btn-mc:active {
+  background-color: #6b6b6b;
+  border-top-color: #585858;
+  border-left-color: #585858;
+  border-bottom-color: #a8a8a8;
+  border-right-color: #a8a8a8;
+  color: #fff;
+}
+
+/* Sliders */
+.mc-slider-container {
+  position: relative;
+  width: 292px;
+  height: 36px;
+  background-color: #7b7b7b;
+  border: 2px solid #000;
+  border-top-color: #a8a8a8;
+  border-left-color: #a8a8a8;
+  border-bottom-color: #585858;
+  border-right-color: #585858;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mc-slider-label {
+  position: absolute;
+  font-family: var(--font-retro);
+  font-size: 10px;
+  color: #fff;
+  text-shadow: 2px 2px 0px #3f3f3f;
+  pointer-events: none;
+  z-index: 2;
+  text-align: center;
+  width: 100%;
+}
+
+.mc-slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  outline: none;
+  margin: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.mc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 36px;
+  background-color: #7b7b7b;
+  border: 2px solid #000;
+  border-top-color: #a8a8a8;
+  border-left-color: #a8a8a8;
+  border-bottom-color: #585858;
+  border-right-color: #585858;
+  cursor: pointer;
+  position: relative;
+  top: -2px; /* align borders visually */
+  left: 0;
+}
+.mc-slider::-webkit-slider-thumb:hover {
+  background-color: #8b8b8b;
+}
+
+/* Loading Screen Overhaul */
+#loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  background-color: #4b331d; /* dirt color base */
+  /* Dirt texture pattern using CSS gradients */
+  background-image:
+    linear-gradient(45deg, #3d2917 25%, transparent 25%, transparent 75%, #3d2917 75%, #3d2917),
+    linear-gradient(45deg, #3d2917 25%, transparent 25%, transparent 75%, #3d2917 75%, #3d2917);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.8s ease;
+}
+
+.loading-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 60px;
+}
+
+.loading-logo {
+  /* Simple CSS approximation of Minecraft Logo blocky text */
+  font-family: var(--font-retro);
+  font-size: 48px;
+  color: #a8a8a8;
+  text-shadow:
+    4px 4px 0 #3b3b3b,
+    0px 6px 0 #000,
+    6px 0px 0 #000,
+    6px 6px 0 #000;
+  letter-spacing: 2px;
+  font-weight: bold;
+}
+.loading-logo::after {
+  content: 'MINECRAFT';
+}
+
+.loading-bar-container {
+  width: 300px;
+  height: 8px;
+  background: #000;
+  border: 2px solid #555;
+  border-top-color: #222;
+  border-left-color: #222;
+  border-radius: 0;
+  overflow: hidden;
+  padding: 1px;
+}
+
+.loading-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: #55ff55; /* vibrant green */
+  transition: width 0.3s ease;
+}
+
+.loading-text {
+  font-family: var(--font-retro);
+  font-size: 10px;
+  color: #fff;
+  text-shadow: 2px 2px 0 #3f3f3f;
+  margin-bottom: -40px; /* pull closer to bar */
 }
