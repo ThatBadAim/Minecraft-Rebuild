@@ -78,16 +78,18 @@ for (const key in BLOCK_INFO) {
 
   // Storage Quantities & Stacking Limits
   const type = BLOCK_INFO[key].type;
-  // Unstackable (Max 1): Tools, weapons, armor, potions, boats, and items holding unique internal data
-  if ([BLOCKS.STONE_PICKAXE, BLOCKS.WATER].includes(type)) {
+  // Unstackable (Max 1): Tools, weapons, armor, potions, boats, and items holding unique internal data (e.g., Shulker Boxes, filled Buckets).
+  const unstackables = [BLOCKS.STONE_PICKAXE, BLOCKS.WATER];
+
+  // Limited Stacking (Max 16): Specific utility/throwable items (e.g., Ender Pearls, Eggs, Snowballs, Signs).
+  const limitedStackables = [BLOCKS.MEAT, BLOCKS.WOOL, BLOCKS.SLIME, BLOCKS.COBWEB, BLOCKS.TNT, BLOCKS.ICE, BLOCKS.STICK, BLOCKS.TORCH, BLOCKS.MONSTER_EGG];
+
+  if (unstackables.includes(type)) {
     BLOCK_INFO[key].maxStack = 1;
-  }
-  // Limited Stacking (Max 16): Specific utility/throwable items
-  else if ([BLOCKS.MEAT, BLOCKS.WOOL, BLOCKS.SLIME, BLOCKS.COBWEB, BLOCKS.TNT, BLOCKS.ICE, BLOCKS.STICK, BLOCKS.TORCH].includes(type)) {
+  } else if (limitedStackables.includes(type)) {
     BLOCK_INFO[key].maxStack = 16;
-  }
-  // Standard Stacking (Max 64): Standard blocks and materials
-  else {
+  } else {
+    // Standard Stacking (Max 64): Standard blocks and materials (e.g., building blocks, raw resources).
     BLOCK_INFO[key].maxStack = 64;
   }
 }

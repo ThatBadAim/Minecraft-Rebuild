@@ -269,7 +269,13 @@ export const BIOMES = {
   SWAMPLAND: 4,
   JUNGLE: 5,
   TAIGA: 6,
-  MUSHROOM_ISLAND: 7
+  MUSHROOM_ISLAND: 7,
+  OCEAN: 8,
+  ICE_PLAINS: 9,
+  SAVANNA: 10,
+  MESA: 11,
+  BIRCH_FOREST: 12,
+  ROOFED_FOREST: 13
 };
 
 export class BiomePipeline {
@@ -299,6 +305,13 @@ export class BiomePipeline {
     if (rareIsland > 0.98 && temp < 0.6 && humid > 0.6) {
         return BIOMES.MUSHROOM_ISLAND;
     }
+
+    if (temp > 0.4 && temp < 0.6 && humid > 0.4 && humid < 0.6) return BIOMES.OCEAN;
+    if (temp < 0.2 && humid < 0.3) return BIOMES.ICE_PLAINS;
+    if (temp > 0.4 && temp < 0.6 && humid > 0.7) return BIOMES.ROOFED_FOREST;
+    if (temp > 0.5 && temp < 0.7 && humid > 0.5) return BIOMES.BIRCH_FOREST;
+    if (temp > 0.9 && humid < 0.2) return BIOMES.MESA;
+    if (temp > 0.8 && humid < 0.4) return BIOMES.SAVANNA;
 
     // 2D Biome Lookup Matrix (Temperature Y, Humidity X)
     if (temp < 0.3) {

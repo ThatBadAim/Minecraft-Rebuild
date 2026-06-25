@@ -73,6 +73,36 @@ export class TerrainGenerator {
             heightVariation = 10.0;
             frequency = 0.01;
             break;
+        case BIOMES.OCEAN:
+            baseHeight = 45.0;
+            heightVariation = 8.0;
+            frequency = 0.005;
+            break;
+        case BIOMES.MESA:
+            baseHeight = 75.0;
+            heightVariation = 20.0;
+            frequency = 0.01;
+            break;
+        case BIOMES.SAVANNA:
+            baseHeight = 64.0;
+            heightVariation = 12.0;
+            frequency = 0.005;
+            break;
+        case BIOMES.ICE_PLAINS:
+            baseHeight = 64.0;
+            heightVariation = 4.0;
+            frequency = 0.005;
+            break;
+        case BIOMES.BIRCH_FOREST:
+            baseHeight = 64.0;
+            heightVariation = 16.0;
+            frequency = 0.01;
+            break;
+        case BIOMES.ROOFED_FOREST:
+            baseHeight = 64.0;
+            heightVariation = 16.0;
+            frequency = 0.01;
+            break;
     }
 
     const base = this.noiseGen.fbm3D(worldX * frequency, worldY * frequency, worldZ * frequency, 4, 0.5, 2.0) * amplitude;
@@ -191,6 +221,15 @@ export class TerrainGenerator {
                topBlock = 3; // STONE
                fillerBlock = 3; // STONE
            }
+        } else if (biome === BIOMES.OCEAN) {
+          topBlock = 2; // DIRT
+          fillerBlock = 2; // DIRT
+        } else if (biome === BIOMES.ICE_PLAINS) {
+          topBlock = 1; // GRASS
+          fillerBlock = 2; // DIRT
+        } else if (biome === BIOMES.MESA) {
+          topBlock = 6; // SAND
+          fillerBlock = 6; // SAND
         }
 
         for (let y = 127; y >= 0; y--) {
@@ -209,7 +248,7 @@ export class TerrainGenerator {
               }
             } else if (depth < 4) {
               depth++;
-              if (biome === BIOMES.DESERT && depth >= 1 && depth <= 3) {
+              if ((biome === BIOMES.DESERT && depth >= 1 && depth <= 3) || (biome === BIOMES.MESA && y % 4 === 0)) {
                   blocks[index] = 30; // SANDSTONE
               } else {
                   blocks[index] = fillerBlock;
@@ -414,6 +453,61 @@ export class TerrainGenerator {
               const ty = getGroundY(tx, tz);
               if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
                   this.generateTree(tx, ty, tz, blocks, 4, 5); // Oak
+              }
+          }
+      } else if (centerBiome === BIOMES.ICE_PLAINS) {
+          // Add snow layer
+          for(let x=0; x<16; x++) {
+              for(let z=0; z<16; z++) {
+                  const ty = getGroundY(x, z);
+                  if (ty > 0 && ty < 127 && blocks[x + z*16 + ty*256] !== 15) {
+                      blocks[x + z*16 + (ty+1)*256] = 31; // SNOW_LAYER
+                  }
+              }
+          }
+      } else if (centerBiome === BIOMES.BIRCH_FOREST) {
+          for(let i=0; i<5; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 13, 14); // Birch
+              }
+          }
+      } else if (centerBiome === BIOMES.ROOFED_FOREST) {
+          for(let i=0; i<15; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 4, 5); // Oak
+              }
+          }
+      } else if (centerBiome === BIOMES.SAVANNA) {
+          for(let i=0; i<1; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 4, 5); // Acacia stand-in
+              }
+          }
+      } else if (centerBiome === BIOMES.JUNGLE) {
+          for(let i=0; i<8; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 4, 5); // Jungle wood stand-in
+              }
+          }
+      } else if (centerBiome === BIOMES.EXTREME_HILLS) {
+          for(let i=0; i<1; i++) {
+              const tx = prng.nextInt(12) + 2;
+              const tz = prng.nextInt(12) + 2;
+              const ty = getGroundY(tx, tz);
+              if (ty > 0 && blocks[tx + tz*16 + ty*256] === 1) {
+                  this.generateTree(tx, ty, tz, blocks, 11, 12); // Pine
               }
           }
       }
